@@ -193,15 +193,17 @@ class PatchCore(torch.nn.Module, ABC):
     
     # TODO: Controllare (Coreset Subsampling)
     def fit(self, train_paths: List[str], scale: int = 1) -> None:
+        
+        self.memory_bank_paths = []
 
         train_dataloader = self.get_dataloader(train_paths)
         tot = len(train_dataloader) // scale
         counter = 0
-        for sample, _, _, _ in tqdm(train_dataloader, total=tot):
+        for sample, _, file_path, _ in tqdm(train_dataloader, total=tot):
       
             patch, _ = self.extract_embeddings(sample)
             self.memory_bank.append(patch.cpu())                # Fill memory bank
-            
+            self.memory_bank_paths.append(file_path)
             counter += 1
             if counter > tot:
                 break
