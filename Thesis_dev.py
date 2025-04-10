@@ -23,18 +23,18 @@ from sklearn.metrics import f1_score, roc_curve, roc_auc_score
 
 from transformers import AutoModel, AutoImageProcessor, BaseImageProcessor
 
-# UTILITY
+### UTILITY ###
 
 # MVTecDataset DONE
 class MVTecDataset(torch.utils.data.Dataset):  
 
-    def __init__(self, folders_path: List[str], processor: BaseImageProcessor, resize: int = 256):
+    def __init__(self, folders_path: List[str], processor: BaseImageProcessor, resize: int = 256, cropsize : int = 224):
 
         # List subfolders
         self.filepaths = []
         self.target = [] # 0 Good, 1 Nok
         self.transform = processor
-        self.cropsize = processor.size['height']
+        self.cropsize = cropsize
         self.resize = resize
 
         # Populate the target and filepath lists
@@ -109,9 +109,11 @@ def get_best_threshold(y_true: List[int], y_hat: List[float], initial_threshold:
     
     return optimal_y_hat, optimal_f1score, optimal_threshold, initial_f1score
 
+################
+
 # PatchCore
 backbones = [
-    "timm/wide_resnet50_2.tv_in1k",
+    "timm/wide_resnet50_2.tv2_in1k",
     "google/vit-base-patch16-224-in21k"
 ]
 
@@ -134,7 +136,7 @@ class PatchCore(torch.nn.Module, ABC):
     def __init__(
             self,
             layers: List[int] = [1,2],
-            backbone: str = 'timm/wide_resnet50_2.tv_in1k',
+            backbone: str = 'google/vit-base-patch16-224-in21k',
             f_coreset: float = 1,       # Fraction rate of training samples
             eps_coreset: float = 0.90,  # SparseProjector parameter
             k_nearest: int = 9,         # k parameter for K-NN search
@@ -145,7 +147,8 @@ class PatchCore(torch.nn.Module, ABC):
         assert eps_coreset > 0
         assert k_nearest > 0
 
-        super(PatchCore, self).__init__()
+        super().__init__()
+        
         torch.manual_seed(seed)
 
         # Model creation
@@ -167,7 +170,6 @@ class PatchCore(torch.nn.Module, ABC):
         self.f_coreset = f_coreset      # Fraction rate of training samples
         self.eps_coreset = eps_coreset  # SparseProjector parameter
         self.k_nearest = k_nearest      # k parameter for K-NN search
-        self.image_size = self.processor.size["height"]
         self.threshold = None
 
     @abstractmethod
@@ -189,7 +191,7 @@ class PatchCore(torch.nn.Module, ABC):
         """
         pass
     
-    # TODO: Controllare l'ultima parte di codice (Coreset Subsampling)
+    # TODO: Controllare (Coreset Subsampling)
     def fit(self, train_paths: List[str], scale: int = 1) -> None:
 
         train_dataloader = self.get_dataloader(train_paths)
@@ -239,7 +241,7 @@ class PatchCore(torch.nn.Module, ABC):
         # Computes the weight w
         m_star_neighbourhood = self.memory_bank[nn_idxs[0, 1:]]         
         w_denominator = torch.linalg.norm(m_test_star - m_star_neighbourhood, dim=1)    # Sum over the exp of l2 norm distances btw m_test_star and the m* neighbourhood
-        norm = torch.sqrt(torch.tensor(hidden_size))                                 # Softmax normalization trick to prevent exp(norm) from becoming infinite
+        norm = torch.sqrt(torch.tensor(hidden_size))                                    # Softmax normalization trick to prevent exp(norm) from becoming infinite
         w = 1 - (torch.exp(s_star / norm) / torch.sum(torch.exp(w_denominator / norm))) # Equation 7 from the paper
         
         # Compute image-level anomaly score s
@@ -247,14 +249,14 @@ class PatchCore(torch.nn.Module, ABC):
 
         # # Segmentation map
         height = width = int(math.sqrt(n_patches))
-        fmap_size = (height, width)    # Feature map sizes: h, w
+        fmap_size = (height, width)                     # Feature map sizes: h, w
         segm_map = dist_score.view(1, 1, *fmap_size)    # Reshape distance scores tensor
         segm_map = torch.nn.functional.interpolate(     # Upscale by bi-linaer interpolation to match the original input resolution
                         segm_map,
                         size=(self.image_size, self.image_size),
                         mode='bilinear'
                     )
-        segm_map = gaussian_blur(segm_map.cpu())              # Gaussian blur of kernel width = 4
+        segm_map = gaussian_blur(segm_map.cpu())         # Gaussian blur of kernel width = 4
         
         # debugging purposes
         self.s_idx = s_idx
@@ -280,7 +282,7 @@ class PatchCore(torch.nn.Module, ABC):
             print(f"{'Val' if validation_flag else 'Test'}: {title} Level ROCAUC: {result}")
             return result
         
-    # TODO: To check next
+    # TODO: Controllare ROC AUC Score
     def evaluate(self, test_paths: List[str], validation_flag: boolean = True):
   
         image_preds, image_labels = [], []
@@ -343,19 +345,15 @@ class PatchCore(torch.nn.Module, ABC):
         self.auc = image_level_rocauc
 
     # Utilies Functions
-    def get_dataloader(self, paths):
-        dataset = MVTecDataset(paths, self.processor)
+    def get_dataloader(self, paths: List[str]) -> DataLoader:
+        dataset = MVTecDataset(paths, self.processor, self.image_size)
         return DataLoader(dataset)
 
-    def save_memory_bank(self, feature_filepath): # Save memory bank
-        if not os.path.exists(model_folder):
-            model_folder = feature_filepath.split("/")[-2]
-            os.makedirs(model_folder)
-        # do this after fit
-        torch.save(self.memory_bank, feature_filepath)
+    def save_memory_bank(self, path: str): # Save memory bank
+        torch.save(self.memory_bank, path)
 
-    def load_memory_bank(self, feature_filepath): # Load memory bank
-        self.memory_bank = torch.load(feature_filepath)
+    def load_memory_bank(self, path: str): # Load memory bank
+        self.memory_bank = torch.load(path)
         self.memory_bank = self.memory_bank.to(self.device) # Load to GPU
 
     # Cosine similarity
@@ -481,7 +479,7 @@ class PatchCore(torch.nn.Module, ABC):
         self.segm_maps = segm_maps
         self.auc = image_level_rocauc
 
-class VanillaPatchCore(torch.nn.Module):
+class VanillaPatchCore(PatchCore):
     
     # Override
     def set_hooks(self):
@@ -490,20 +488,21 @@ class VanillaPatchCore(torch.nn.Module):
 
     def __init__(
             self,
+            layers = None,
+            backbone: str = 'timm/wide_resnet50_2.tv2_in1k',
             f_coreset:float = 1,    # Fraction rate of training samples
             eps_coreset: float = 0.90, # SparseProjector parameter
-            k_nearest: int = 9,        # k parameter for K-NN search
-            backbone: str = 'timm/wide_resnet50_2.tv_in1k',
+            k_nearest: int = 3,        # k parameter for K-NN search
+            seed: int = 42
     ):
         assert f_coreset > 0
         assert eps_coreset > 0
         assert k_nearest > 0
 
-        super(VanillaPatchCore, self).__init__()
+        super().__init__(layers, backbone, f_coreset, eps_coreset, k_nearest, seed)
+        self.image_size = self.processor.data_config['input_size'][-1]
 
-        # TODO UNDERSTAND
-        self.avg = torch.nn.AvgPool2d(3, stride=1)
-        self.resize = torch.nn.AdaptiveAvgPool2d(28)  ## ARE U SURE
+        self.avg = torch.nn.AvgPool2d(3, stride=1) # For shrinking the spatial dimensions        
         self.threshold = None
 
     # Override
@@ -515,11 +514,9 @@ class VanillaPatchCore(torch.nn.Module):
     # Override
     def extract_embeddings(self, sample):
             feature_maps = self(sample)                   # Extract feature maps
-            # Create aggregation function of feature vectors in the neighbourhood
-            self.avg = torch.nn.AvgPool2d(3, stride=1)
-            fmap_size = feature_maps[0].shape[-2]         # Feature map sizes h, w
-            # self.resize = torch.nn.AdaptiveAvgPool2d(fmap_size)
-            # Create patch
+            fmap_size = feature_maps[0].shape[-2]         # fmap_size = 28
+            self.resize = torch.nn.AdaptiveAvgPool2d(fmap_size)  ## For stretching the spatial dimensions
+            
             resized_maps = [self.resize(self.avg(fmap)) for fmap in feature_maps]
             patch = torch.cat(resized_maps, 1)            # Merge the resized feature maps
             patch = patch.reshape(patch.shape[1], -1).T   # Craete a column tensor
@@ -700,6 +697,7 @@ class PatchCoreViT(PatchCore): # concatenates layers of ViT
     ):
 
         super().__init__(layers, backbone, f_coreset, eps_coreset, k_nearest, seed)
+        self.image_size = self.processor.size["height"]
 
     # Override
     def forward(self, sample: tensor):
