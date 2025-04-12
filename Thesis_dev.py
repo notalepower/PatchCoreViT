@@ -709,8 +709,9 @@ class PatchCoreViT(PatchCore): # concatenates layers of ViT
     
     # Override   
     def extract_embeddings(self, sample):
-        sample_preprocessed = sample.pixel_values[0].to(self.device)
-        output = self(sample_preprocessed)
+        sample_preprocessed = sample.pixel_values[0]
+        sample_preprocessed = torch.from_numpy(sample_preprocessed) if type(sample_preprocessed) == np.ndarray else sample_preprocessed
+        output = self(sample_preprocessed.to(self.device))
         output = [ torch.split(o, [1, o.shape[1] - 1], dim=1)[1] for o in output ]  # removes classification token in front of the maps
         feature_maps = torch.cat(output, 2) # concatenates the feature's levels
         patch = feature_maps.squeeze()

@@ -1,4 +1,4 @@
-from turtle import color
+import os
 import cv2
 import numpy as np
 import matplotlib as plt
@@ -46,10 +46,10 @@ def get_plot_images(idx, path):
     
     return img_rect, img_crop
 
-def show(input_idx, input_path, model):
+def show(input_idx, input_path, model, save = False):
     n_patch_img = model.memory_bank.shape[0] // len(model.memory_bank_paths)
 
-    memory_bank_idx = model.sit_score_idxs[model.s_idx]
+    memory_bank_idx = model.dist_score_idxs[model.s_idx]
     target_path_idx = memory_bank_idx // n_patch_img
     target_idx = memory_bank_idx % n_patch_img
     target_path = model.memory_bank_paths[target_path_idx]
@@ -58,22 +58,46 @@ def show(input_idx, input_path, model):
     target_rect, target_crop = get_plot_images(target_idx, target_path)
 
     # 2x2 plot
-
-    fig, axs = plt.subplots(2, 2, figsize=(8, 8))
+    fig, axs = plt.subplots(2, 3, figsize=(8, 8))
     
     fig.suptitle('Patch Analysis', fontsize=14, fontweight='bold')
 
-    axs[0, 0].set_title('Input image') # magari mettere anche il nome .jpg
-    axs[0, 0].imshow(cv2.cvtColor(input_rect, cv2.COLOR_BGR2RGB))
+    axs[0,0].set_title('Input image') # magari mettere anche il nome .jpg
+    axs[0,0].imshow(cv2.cvtColor(input_rect, cv2.COLOR_BGR2RGB))
 
-    axs[0, 1].set_title('Memory bank image') # magari mettere anche il nome .jpg
-    axs[0, 1].imshow(cv2.cvtColor(target_rect, cv2.COLOR_BGR2RGB))
+    axs[0,1].set_title('Memory bank image') # magari mettere anche il nome .jpg
+    axs[0,1].imshow(cv2.cvtColor(target_rect, cv2.COLOR_BGR2RGB))
 
-    axs[1, 0].set_title(f'Patch: {input_idx}, th:0.5') # magari mettere anche il nome .jpg
-    axs[1, 0].imshow(cv2.cvtColor(input_crop, cv2.COLOR_BGR2RGB))
+    axs[1,0].set_title(f'Patch: {input_idx}, th:0.5') # magari mettere anche il nome .jpg
+    axs[1,0].imshow(cv2.cvtColor(input_crop, cv2.COLOR_BGR2RGB))
 
-    axs[1, 1].set_title(f'Score: 0.25, result: OK') # magari mettere anche il nome .jpg
-    axs[1, 1].imshow(cv2.cvtColor(target_crop, cv2.COLOR_BGR2RGB))
+    axs[1,1].set_title(f'Score: 0.25, result: OK') # magari mettere anche il nome .jpg
+    axs[1,1].imshow(cv2.cvtColor(target_crop, cv2.COLOR_BGR2RGB))
 
-    plt.show()
+    axs[0,2].axis('off') # Removes axis form the plot
+    axs[1,2].axis('off') # Removes axis form the plot
+    
+    axs[0,2].text(0, 0.5,
+        "Legenda o info extra\n- Blue: dataset A\n- Rosso: dataset B",
+        ha='left', va='center', fontsize=10,
+        bbox={'facecolor': 'green', 'alpha': 0.5, 'pad': 10}
+    )
+
+    if save:
+        if not os.path.exists('tmp'):
+            os.makedirs('tmp')
+        plt.savefig(f'tmp/{os.path.basename(input_path)}_{input_idx}.png')
+    else:
+        plt.subplots_adjust(top=0.93, bottom=0.4, wspace=0.2)
+        plt.show()
+
+def create_gif(input_path, model, n_patch_img):
+    
+    s, segm_map = model.predict()
+    for idx in range(n_patch_img):
+        show(idx, input_path, model, save=True)
+    
+    frames = os.listdir('tmp')
+    frames.sort()
+    frames[0].save("patch_analysis.gif", save_all=True, append_images=frames[1:], duration=100, loop=0)
 
