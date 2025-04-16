@@ -1,17 +1,22 @@
 import os
 import cv2
+import torch
+import shutil
 import numpy as np
-import matplotlib as plt
+import matplotlib.pyplot as plt
+
+from PIL import Image
+from tqdm import tqdm
 
 img_size = (224, 224)
 red_color = (0, 0, 255)
 thickness = 1
 n_patch_img = 196   # number of patches per image   (196 = 14 x 14)
-n_patch_side = np.sqrt(n_patch_img)                     # number of patches per side    (14 = √196)
+n_patch_side = int(np.sqrt(n_patch_img))                 # number of patches per side    (14 = √196)
 w_patch = int(img_size[0] / n_patch_side)               # width of patches in pixel     (16px = 224 / 14)
 h_patch = int(img_size[1] / n_patch_side)               # height of patches in pixel    (16px = 224 / 14)
 
-def plot_gridded_image(img_path):
+def plot_gridded_image(img_path: str):
     img = cv2.imread(img_path)
     img_resized = cv2.resize(img, img_size)
 
@@ -25,8 +30,9 @@ def plot_gridded_image(img_path):
 
     temp = cv2.cvtColor(temp, cv2.COLOR_BGR2RGB)
     plt.imshow(temp)
+    plt.show()
 
-def get_box_coordinates(idx):
+def get_box_coordinates(idx: int):
     row, col = int(idx % n_patch_side), int(idx // n_patch_side)
 
     top_left = (row * h_patch, col * w_patch)
@@ -34,7 +40,7 @@ def get_box_coordinates(idx):
 
     return row, col, top_left, bottom_right
 
-def get_plot_images(idx, path):
+def get_plot_images(idx: int, path: str):
     img = cv2.imread(path)
     img_resized = cv2.resize(img, img_size)
     
@@ -46,13 +52,12 @@ def get_plot_images(idx, path):
     
     return img_rect, img_crop
 
-def show(input_idx, input_path, model, save = False):
-    n_patch_img = model.memory_bank.shape[0] // len(model.memory_bank_paths)
+def show(input_idx: int, input_path: str, model, save = False):
 
-    memory_bank_idx = model.dist_score_idxs[model.s_idx]
+    memory_bank_idx = model.dist_score_idxs[input_idx]
     target_path_idx = memory_bank_idx // n_patch_img
     target_idx = memory_bank_idx % n_patch_img
-    target_path = model.memory_bank_paths[target_path_idx]
+    target_path = model.memory_bank_paths[target_path_idx][0] # TODO: Perché restituisce una tupla
 
     input_rect, input_crop = get_plot_images(input_idx, input_path)
     target_rect, target_crop = get_plot_images(target_idx, target_path)
@@ -65,7 +70,7 @@ def show(input_idx, input_path, model, save = False):
     axs[0,0].set_title('Input image') # magari mettere anche il nome .jpg
     axs[0,0].imshow(cv2.cvtColor(input_rect, cv2.COLOR_BGR2RGB))
 
-    axs[0,1].set_title('Memory bank image') # magari mettere anche il nome .jpg
+    axs[0,1].set_title(f'{os.path.basename(target_path)}') # magari mettere anche il nome .jpg
     axs[0,1].imshow(cv2.cvtColor(target_rect, cv2.COLOR_BGR2RGB))
 
     axs[1,0].set_title(f'Patch: {input_idx}, th:0.5') # magari mettere anche il nome .jpg
@@ -86,18 +91,28 @@ def show(input_idx, input_path, model, save = False):
     if save:
         if not os.path.exists('tmp'):
             os.makedirs('tmp')
-        plt.savefig(f'tmp/{os.path.basename(input_path)}_{input_idx}.png')
+        plt.savefig(f'tmp/{input_idx:03d}.png')
+        plt.close()
     else:
         plt.subplots_adjust(top=0.93, bottom=0.4, wspace=0.2)
         plt.show()
 
-def create_gif(input_path, model, n_patch_img):
+def create_gif(input_path, model):
     
-    s, segm_map = model.predict()
-    for idx in range(n_patch_img):
-        show(idx, input_path, model, save=True)
-    
-    frames = os.listdir('tmp')
-    frames.sort()
-    frames[0].save("patch_analysis.gif", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    n_patch_img = model.memory_bank.shape[0] // len(model.memory_bank_paths)
 
+    img = Image.open(input_path).convert("RGB")
+    sample = model.processor(img)
+    sample_torch = torch.Tensor(sample['pixel_values'][0]).unsqueeze(0)
+    sample['pixel_values'][0]=sample_torch
+    
+    _, segm_map = model.predict(sample)
+
+    for idx in tqdm(range(n_patch_img)):
+        show(idx, input_path, model, save=True) # Change to True
+    
+    frames_paths = sorted([f for f in os.listdir('tmp') if f.endswith(('.png', '.jpg', '.jpeg'))])
+    frames = [Image.open(os.path.join('tmp', f)) for f in frames_paths]
+    frames[0].save("patch_analysis.gif", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    
+    shutil.rmtree('tmp')
