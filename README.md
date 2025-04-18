@@ -6,13 +6,16 @@ A Vision Transformer Approach To Anomaly Detection
 - PatchCore = Abstract Class
 - VanillaPatchCore = PatchCore + CNN
 - PatchCoreV2 = PatchCore + ViT
-- PatchCoreV3 = PattchCore + ViT + Layer Concatenation
-- PatchCoreSWin = PAtchCore + SWin
+- PatchCoreV3 = PatchCore + ViT + Layer Concatenation
+- PatchCoreSWin = PatchCore + SWin
 ---
 ## TODO
-- [x] MvTecDataset class is OK
-- [x] Gaussian Blurred is OK
+- [ ] Controllare in fit il Coreset Subsampling
+- [ ] Implementare PatchCore + SWin
 - [ ] Per ogni parametro in input delle funzioni aggiungere anche il tipo di input che si aspetta
+- [ ] Aggiungere commenti in inglese nel codice
+- [ ] Sistemare le cosine functions
+- [ ] Completare l'anomalia a livello di pixel
 ---
 ## MvTecDataset Class
 This custom class was tailored to fit the directory topography of the [MvTec AD dataset](https://www.mvtec.com/company/research/datasets/mvtec-ad/downloads)

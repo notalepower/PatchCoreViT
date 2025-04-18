@@ -92,7 +92,7 @@ def get_y_f1score(y_true: List[int], y_hat: List[float], threshold: float) -> Tu
 
 def get_best_threshold(y_true: List[int], y_hat: List[float], initial_threshold: float, search: int) -> Tuple[List[int], float, float, float]: 
     increment = 0.01
-    thresholds = np.arange(initial_threshold-search, initial_threshold + search + increment, increment)
+    thresholds = np.arange(initial_threshold-search, initial_threshold+search + increment, increment)
     
     intial_y_hat, initial_f1score = get_y_f1score(y_true, y_hat, initial_threshold)
     
@@ -244,6 +244,7 @@ class PatchCore(torch.nn.Module, ABC):
         m_star_neighbourhood = self.memory_bank[nn_idxs[0, 1:]]         
         w_denominator = torch.linalg.norm(m_test_star - m_star_neighbourhood, dim=1)    # Sum over the exp of l2 norm distances btw m_test_star and the m* neighbourhood
         norm = torch.sqrt(torch.tensor(hidden_size))                                    # Softmax normalization trick to prevent exp(norm) from becoming infinite
+        
         w = 1 - (torch.exp(s_star / norm) / torch.sum(torch.exp(w_denominator / norm))) # Equation 7 from the paper
         
         # Compute image-level anomaly score s
@@ -275,7 +276,7 @@ class PatchCore(torch.nn.Module, ABC):
 
         return s, segm_map
 
-    def compute_ROC_AUC_score(ground_truth, predictions, validation_flag: boolean, title: str="IMAGE"):
+    def compute_ROC_AUC_score(self, ground_truth, predictions, validation_flag: boolean, title: str="IMAGE"):
         if len(np.unique(predictions)) == 1:
             print(f"roc_auc_score at {title} level can't be computed, {title}_labels (y_true) doesn't contain anomalies")
             return -1
@@ -284,7 +285,6 @@ class PatchCore(torch.nn.Module, ABC):
             print(f"{'Val' if validation_flag else 'Test'}: {title} Level ROCAUC: {result}")
             return result
         
-    # TODO: Controllare ROC AUC Score
     def evaluate(self, test_paths: List[str], validation_flag: boolean = True):
   
         image_preds, image_labels = [], []
@@ -316,17 +316,17 @@ class PatchCore(torch.nn.Module, ABC):
         # Check ROC AUC at PIXEL level
         pixel_level_rocauc = self.compute_ROC_AUC_score(pixel_labels, pixel_preds, validation_flag, "PIXEL")
         
-        # TODO: WTF is this ???
         # calculate image-level ROC AUC score
-        if len(np.unique(image_labels))>1:
+        # set initial threshold
+        if len(np.unique(image_labels)) > 1:
             fpr, tpr, thresholds = roc_curve(image_labels, image_preds)
-            distances = np.sqrt((1-tpr)**2 + fpr**2) # Euclidean distance in a 2D space between points
+            distances = np.sqrt(( 1 - tpr )**2 + fpr**2 )        # Euclidean distance between points and (0, 1) which is the perfect score
             best_index = np.argmin(distances)
             initial_score_threshold = thresholds[best_index]
             print('[INFO][evaluate] Image Level ROCAUC: %.3f' % (image_level_rocauc))
             search=10 # -1.5 initial_threshold +1.5
         else:
-            initial_score_threshold=0
+            initial_score_threshold = 0
             search=10 # -10 0 +10
         
         ## Find best threshold value
@@ -337,10 +337,12 @@ class PatchCore(torch.nn.Module, ABC):
             print(f"[INFO][evaluate] Average Inference time with batch_size={test_dataloader.batch_size}: {np.mean(time_list):.3f}s")
             self.threshold = optimal_score_threshold
         
-        # For debugging purposes
-        norm_predictions = [(1 if score>self.threshold else 0) for score in image_preds]
-        self.cm = confusion_matrix(image_labels, norm_predictions)
-        self.prfs = precision_recall_fscore_support(image_labels, norm_predictions, average = 'binary')
+            # For debugging purposes
+            self.norm_predictions = optimal_y_hat
+            self.cm = confusion_matrix(image_labels, self.norm_predictions)
+            self.prfs = precision_recall_fscore_support(image_labels, self.norm_predictions, average = 'binary')
+        
+        # For debugging purposes
         self.ground_truths = image_labels
         self.predictions = image_preds
         self.segm_maps = pixel_preds
@@ -372,12 +374,11 @@ class PatchCore(torch.nn.Module, ABC):
     def predict_cosine(self, sample: tensor):
 
         # Patch extraction
-        patch = self.extract_embeddings(sample)
-        self.patch = patch
+        patch, _ = self.extract_embeddings(sample)
+        n_patches, hidden_size = patch.shape 
 
         # Compute maximum distance score s* (equation 6 from the paper)
         similarities = self.csim(patch, self.memory_bank)         # L2 norm dist btw test patch with each patch of memory bank
-
         sim_score, sim_score_idxs = torch.max(similarities, dim=1)       # Val and index of the distance scores (minimum values of each row in distances)
         s_idx = torch.argmin(sim_score)                                # Index of the anomaly candidate patch
         s_star = torch.min(sim_score)                                  # Maximum distance score s*
@@ -391,16 +392,19 @@ class PatchCore(torch.nn.Module, ABC):
         # Compute image-level anomaly score s
         m_star_neighbourhood = self.memory_bank[nn_idxs[0, 1:]]
         w_denominator = torch.nn.functional.cosine_similarity(m_test_star, m_star_neighbourhood, dim=1)    # Sum over the exp of l2 norm distances btw m_test_star and the m* neighbourhood
-        norm = torch.sqrt(torch.tensor(patch.shape[1]))                                 # Softmax normalization trick to prevent exp(norm) from becoming infinite
-        s_star = 1 - s_star
-        w_denominator = 1 - w_denominator 
+        norm = torch.sqrt(torch.tensor(hidden_size))                                 # Softmax normalization trick to prevent exp(norm) from becoming infinite
+        
+        s_star, w_denominator = 1 - s_star, 1 - w_denominator 
+
         w = 1 - (torch.exp(s_star / norm) / torch.sum(torch.exp(w_denominator / norm))) # Equation 7 from the paper
+        
         s = w * s_star
 
         # # Segmentation map
-        fmap_size = (int(np.sqrt(patch.shape[0])), int(np.sqrt(patch.shape[0])))    # Feature map sizes: h, w
+        height = width = int(math.sqrt(n_patches))
+        fmap_size = (height, width)                    # Feature map sizes: h, w
         segm_map = sim_score.view(1, 1, *fmap_size)    # Reshape distance scores tensor
-        segm_map = torch.nn.functional.interpolate(     # Upscale by bi-linaer interpolation to match the original input resolution
+        segm_map = torch.nn.functional.interpolate(    # Upscale by bi-linaer interpolation to match the original input resolution
                         segm_map,
                         size=(self.image_size, self.image_size),
                         mode='bilinear'
@@ -410,14 +414,13 @@ class PatchCore(torch.nn.Module, ABC):
         # For debugging purposes
         self.s_idx = s_idx
         self.sim_score = sim_score
+
         return s, segm_map
 
     def evaluate_cosine(self, test_dataloader: DataLoader, validation_flag = True):
   
-        image_preds = []
-        image_labels = []
-        pixel_preds = []
-        pixel_labels = []
+        image_preds, image_labels = [], []
+        pixel_preds, pixel_labels = [], []
         time_list = []
 
         segm_maps = []
@@ -445,12 +448,11 @@ class PatchCore(torch.nn.Module, ABC):
         image_labels = np.stack(image_labels)
         image_preds = np.stack(image_preds)
         
-        # Compute ROC AUC for prediction scores
-        image_level_rocauc = roc_auc_score(image_labels, image_preds)
-        #pixel_level_rocauc = roc_auc_score(pixel_labels, pixel_preds)
+        # Check ROC AUC at IMAGE level
+        image_level_rocauc = self.compute_ROC_AUC_score(image_labels, image_preds, validation_flag, "IMAGE")
 
-        print(f"Test: Image Level ROCAUC: {image_level_rocauc}")
-        #print(f"Test: Pixel Level ROCAUC: {pixel_level_rocauc}")
+        # Check ROC AUC at PIXEL level
+        pixel_level_rocauc = self.compute_ROC_AUC_score(pixel_labels, pixel_preds, validation_flag, "PIXEL")
 
 
         # calculate image-level ROC AUC score
@@ -472,10 +474,13 @@ class PatchCore(torch.nn.Module, ABC):
             print(f"[INFO][evaluate] Optimal Score Threshold: {optimal_score_threshold:.3f} F1Score: {optimal_score_f1score:.3f}")
             print(f"[INFO][evaluate] Average Inference time with batch_size={test_dataloader.batch_size}: {np.mean(time_list):.3f}s")
             self.threshold = optimal_score_threshold
+
+            # for debugging purposes
+            self.norm_predictions = optimal_y_hat
+            self.cm = confusion_matrix(image_labels, self.norm_predictions)
+            self.prfs = precision_recall_fscore_support(image_labels, self.norm_predictions, average = 'binary')
         
-        norm_predictions = [(1 if score>self.threshold else 0) for score in image_preds]
-        self.cm = confusion_matrix(image_labels, norm_predictions)
-        self.prfs = precision_recall_fscore_support(image_labels, norm_predictions, average = 'binary')
+        # for debugging purposes
         self.ground_truths = image_labels
         self.predictions = image_preds
         self.segm_maps = segm_maps
@@ -503,9 +508,7 @@ class VanillaPatchCore(PatchCore):
 
         super().__init__(layers, backbone, f_coreset, eps_coreset, k_nearest, seed)
         self.image_size = self.processor.data_config['input_size'][-1]
-
         self.avg = torch.nn.AvgPool2d(3, stride=1) # For shrinking the spatial dimensions        
-        self.threshold = None
 
     # Override
     def forward(self, sample: tensor):
@@ -514,8 +517,9 @@ class VanillaPatchCore(PatchCore):
         return self.features
 
     # Override
-    def extract_embeddings(self, sample):
-            feature_maps = self(sample)                   # Extract feature maps
+    def extract_embeddings(self, sample: tensor)-> Tuple[tensor, tensor]:
+            sample_preprocessed = sample.pixel_values[0]
+            feature_maps = self(sample_preprocessed.to(self.device))      # Extract feature maps
             fmap_size = feature_maps[0].shape[-2]         # fmap_size = 28
             self.resize = torch.nn.AdaptiveAvgPool2d(fmap_size)  ## For stretching the spatial dimensions
             
@@ -719,7 +723,7 @@ class PatchCoreViT(PatchCore): # concatenates layers of ViT
     # TODO: Questo lo puoi controllare per ultimissimo
     def inference(self, folders_input, folder_results,  score_threshold, scoremap_threshold, transform = None):
         
-        # TODO USE THE DEFAULT ONE
+        # TODO: USE THE DEFAULT ONE
         if transform is None:
             transform = T.Compose([
                 T.ToPILImage(),

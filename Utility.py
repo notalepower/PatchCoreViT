@@ -97,7 +97,7 @@ def show(input_idx: int, input_path: str, model, save = False):
         plt.subplots_adjust(top=0.93, bottom=0.4, wspace=0.2)
         plt.show()
 
-def create_gif(input_path, model):
+def create_gif(input_path: str, model):
     
     n_patch_img = model.memory_bank.shape[0] // len(model.memory_bank_paths)
 
