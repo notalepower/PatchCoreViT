@@ -8,6 +8,7 @@ A Vision Transformer Approach To Anomaly Detection
 - PatchCoreV2 = PatchCore + ViT
 - PatchCoreV3 = PatchCore + ViT + Layer Concatenation
 - PatchCoreSWin = PatchCore + SWin
+- PatchCoreSWinV2 = PatchCore + SWin
 ---
 ## TODO
 - [ ] Controllare in fit il Coreset Subsampling

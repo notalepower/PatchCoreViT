@@ -148,7 +148,6 @@ class PatchCore(torch.nn.Module, ABC):
         assert k_nearest > 0
 
         super().__init__()
-        
         torch.manual_seed(seed)
 
         # Model creation
@@ -497,9 +496,9 @@ class VanillaPatchCore(PatchCore):
             self,
             layers = None,
             backbone: str = 'timm/wide_resnet50_2.tv2_in1k',
-            f_coreset:float = 1,    # Fraction rate of training samples
-            eps_coreset: float = 0.90, # SparseProjector parameter
-            k_nearest: int = 3,        # k parameter for K-NN search
+            f_coreset:float = 1,    
+            eps_coreset: float = 0.90, 
+            k_nearest: int = 9,        
             seed: int = 42
     ):
         assert f_coreset > 0
@@ -696,9 +695,9 @@ class PatchCoreViT(PatchCore): # concatenates layers of ViT
             self,
             layers: List[int],
             backbone: str = "google/vit-base-patch16-224-in21k",
-            f_coreset: float = 1,    # Fraction rate of training samples
-            eps_coreset: float = 0.90, # SparseProjector parameter
-            k_nearest: int = 3,        # k parameter for K-NN search
+            f_coreset: float = 1,    
+            eps_coreset: float = 0.90, 
+            k_nearest: int = 9,        
             seed: int = 42
     ):
 
@@ -865,3 +864,42 @@ class PatchCoreViT(PatchCore): # concatenates layers of ViT
             # Read the contents of the file and print them line by line
             for line in f:
                 print(line, end='')  # end='' avo
+
+class PatchCoreSWin(PatchCore): # uses SWin
+    
+    # Override
+    def set_hooks(self):
+        for layer in self.layers:
+            for block in self.blocks:
+                self.model.encoder.layers[layer].blocks[block].register_forward(self.hook)
+
+    def __init__(
+            self,
+            layers: List[int] = [2],
+            blocks: List[int] = [0, 1, 2, 3],
+            backbone: str = "microsoft/swin-small-patch4-window7-224",
+            f_coreset:float = 1, 
+            eps_coreset: float = 0.90, 
+            k_nearest: int = 9,        
+            seed: int = 42
+    ):
+
+        self.blocks = blocks
+        super(self).__init__(layers, backbone, f_coreset, eps_coreset, k_nearest, seed)
+
+    # Override
+    def forward(self, sample: tensor):
+        self.features = []
+        _ = self.model(sample, return_dict=True)
+        return self.features
+
+    # Override          
+    def extract_embeddings(self, sample):
+        sample_preprocessed = sample.pixel_values[0]
+        output = self(sample_preprocessed.to(self.device))
+        features_maps = torch.cat([ o[0] for o in output ], dim = 2)
+        # features_maps = torch.cat([features_maps], 2) # concatenates the feature's levels
+        patch = features_maps.squeeze()
+        return patch
+        
+
