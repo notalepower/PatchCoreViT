@@ -707,7 +707,7 @@ class PatchCoreViT(PatchCore): # concatenates layers of ViT
     # Override
     def forward(self, sample: tensor):
         self.features = []
-        _ = self.model(sample, output_attentions=True, output_hidden_states=True, return_dict=True)
+        _ = self.model(sample, output_hidden_states=True, return_dict=True)
         return self.features
     
     # Override   
@@ -871,7 +871,7 @@ class PatchCoreSWin(PatchCore): # uses SWin
     def set_hooks(self):
         for layer in self.layers:
             for block in self.blocks:
-                self.model.encoder.layers[layer].blocks[block].register_forward(self.hook)
+                self.model.encoder.layers[layer].blocks[block].register_forward_hook(self.hook)
 
     def __init__(
             self,
@@ -885,7 +885,8 @@ class PatchCoreSWin(PatchCore): # uses SWin
     ):
 
         self.blocks = blocks
-        super(self).__init__(layers, backbone, f_coreset, eps_coreset, k_nearest, seed)
+        super().__init__(layers, backbone, f_coreset, eps_coreset, k_nearest, seed)
+        self.image_size = self.processor.size['height']
 
     # Override
     def forward(self, sample: tensor):
@@ -900,6 +901,6 @@ class PatchCoreSWin(PatchCore): # uses SWin
         features_maps = torch.cat([ o[0] for o in output ], dim = 2)
         # features_maps = torch.cat([features_maps], 2) # concatenates the feature's levels
         patch = features_maps.squeeze()
-        return patch
+        return patch, features_maps
         
 
