@@ -18,6 +18,7 @@ import torchvision.transforms as T
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 
+from sklearn import random_projection
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 from sklearn.metrics import f1_score, roc_curve, roc_auc_score
 
@@ -117,7 +118,7 @@ backbones = [
     "google/vit-base-patch16-224-in21k"
 ]
 
-class PatchCore(torch.nn.Module, ABC):
+class PatchCore(torch.nn.Module, ABC): # Abstract class
     
     def hook(self, module, input, output) -> None: # Hook to extract feature maps
         """This hook saves the extracted feature map on self.featured."""
@@ -138,7 +139,7 @@ class PatchCore(torch.nn.Module, ABC):
             layers: List[int] = [1,2],
             backbone: str = 'google/vit-base-patch16-224-in21k',
             f_coreset: float = 1,       # Fraction rate of training samples
-            eps_coreset: float = 0.90,  # SparseProjector parameter
+            eps_coreset: float = 0.09,  # SparseProjector parameter
             k_nearest: int = 9,         # k parameter for K-NN search
             seed: int = 42
         ):
@@ -157,6 +158,7 @@ class PatchCore(torch.nn.Module, ABC):
         self.set_hooks()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = self.model.to(self.device)
+        self.seed = seed
         print(f"[INFO][__init__] Model PatchCore loaded on device: {self.device}")
 
         # Disable gradient computation
@@ -189,8 +191,45 @@ class PatchCore(torch.nn.Module, ABC):
             * insert and example *
         """
         pass
-    
-    # TODO: Controllare (Coreset Subsampling)
+
+    # Get coreset: TO_STUDY 
+    def get_coreset(self, memory_bank: tensor, l: int = 1000, eps: float = 0.90) -> tensor:
+
+        coreset_idx = []  # Returned coreset indexes
+        idx = 0
+
+        # Fitting random projections
+        try:
+            seed = self.seed
+            transformer = random_projection.SparseRandomProjection(eps=eps, random_state=seed)
+            memory_bank = torch.tensor(transformer.fit_transform(memory_bank))
+        except ValueError:
+            print("Error: could not project vectors. Please increase `eps`.")
+
+        # Coreset subsampling
+        print(f'Start Coreset Subsampling...')
+
+        last_item = memory_bank[idx: idx + 1]   # First patch selected = patch on top of memory bank
+        coreset_idx.append(torch.tensor(idx))
+        min_distances = torch.linalg.norm(memory_bank - last_item, dim=1, keepdims=True)    # Norm l2 of distances (tensor)
+
+        # If possible move to GPU the items
+        if torch.cuda.is_available():
+            last_item = last_item.to(self.device)
+            memory_bank = memory_bank.to(self.device)
+            min_distances = min_distances.to(self.device)
+
+        for _ in tqdm(range(l - 1)):
+            distances = torch.linalg.norm(memory_bank - last_item, dim=1, keepdims=True)    # L2 norm of distances (tensor)
+            min_distances = torch.minimum(distances, min_distances)                         # Verical tensor of minimum norms
+            idx = torch.argmax(min_distances)                                               # Index of maximum related to the minimum of norms
+
+            last_item = memory_bank[idx: idx + 1]   # last_item = maximum patch just found
+            min_distances[idx] = 0                  # Zeroing last_item distances
+            coreset_idx.append(idx.to("cpu"))       # Save idx inside the coreset
+
+        return torch.stack(coreset_idx)
+
     def fit(self, train_paths: List[str], scale: int = 1) -> None:
         
         self.memory_bank_paths = []
@@ -207,17 +246,17 @@ class PatchCore(torch.nn.Module, ABC):
             if counter > tot:
                 break
 
-        self.memory_bank = torch.cat(self.memory_bank, 0) # VStack the patches
-        
+        self.memory_bank = torch.cat(self.memory_bank, 0) # VStack the patches        
 
         # TODO: Study Coreset subsampling
         if self.f_coreset < 1:
             self.memory_bank = self.memory_bank.detach()                # Removes from GPU
-            coreset_idx = get_coreset(
+            coreset_idx = self.get_coreset(
                 self.memory_bank,
                 l = int(self.f_coreset * self.memory_bank.shape[0]),
                 eps = self.eps_coreset
             )
+
             self.memory_bank = self.memory_bank[coreset_idx]            # Filters the relevant patches
             self.memory_bank = self.memory_bank.to(self.device)         # Restores to GPU
 
@@ -485,12 +524,20 @@ class PatchCore(torch.nn.Module, ABC):
         self.segm_maps = segm_maps
         self.auc = image_level_rocauc
 
-class VanillaPatchCore(PatchCore):
+class VanillaPatchCore(PatchCore): # CNN backbone with layer concatenation
     
     # Override
     def set_hooks(self):
-        self.model.timm_model.layer2[-1].register_forward_hook(self.hook)          
-        self.model.timm_model.layer3[-1].register_forward_hook(self.hook)          
+        for layer in self.layers:
+            match layer:
+                case "layer1":
+                    self.model.timm_model.layer1[-1].register_forward_hook(self.hook)          
+                case "layer2":
+                    self.model.timm_model.layer2[-1].register_forward_hook(self.hook)          
+                case "layer3":
+                    self.model.timm_model.layer3[-1].register_forward_hook(self.hook)          
+                case "layer4":
+                    self.model.timm_model.layer4[-1].register_forward_hook(self.hook)          
 
     def __init__(
             self,
@@ -685,7 +732,7 @@ class VanillaPatchCore(PatchCore):
             for line in f:
                 print(line, end='')  # end='' avo
 
-class PatchCoreViT(PatchCore): # concatenates layers of ViT
+class PatchCoreViT(PatchCore): # ViT backbone with layer concatenation
     
     # Override
     def set_hooks(self):
@@ -865,7 +912,7 @@ class PatchCoreViT(PatchCore): # concatenates layers of ViT
             for line in f:
                 print(line, end='')  # end='' avo
 
-class PatchCoreSWin(PatchCore): # uses SWin
+class PatchCoreSWin(PatchCore): # SWin backbone with layer concatenation
     
     # Override
     def set_hooks(self):
