@@ -1,5 +1,6 @@
 import os
 import cv2
+import json
 import torch
 import shutil
 import numpy as np
@@ -8,6 +9,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from tqdm import tqdm
 
+mvtec_classes = [ "bottle", "cable", "capsule", "carpet", "grid", "hazelnut", "leather", "metal_nut", "pill", "screw", "tile", "toothbrush", "transistor", "wood", "zipper" ]
 img_size = (224, 224)
 red_color = (0, 0, 255)
 thickness = 1
@@ -15,6 +17,8 @@ n_patch_img = 196   # number of patches per image   (196 = 14 x 14)
 n_patch_side = int(np.sqrt(n_patch_img))                 # number of patches per side    (14 = √196)
 w_patch = int(img_size[0] / n_patch_side)               # width of patches in pixel     (16px = 224 / 14)
 h_patch = int(img_size[1] / n_patch_side)               # height of patches in pixel    (16px = 224 / 14)
+
+# Utility functions for images analysis
 
 def plot_gridded_image(img_path: str):
     img = cv2.imread(img_path)
@@ -116,3 +120,109 @@ def create_gif(input_path: str, model):
     frames[0].save("patch_analysis.gif", save_all=True, append_images=frames[1:], duration=100, loop=0)
     
     shutil.rmtree('tmp')
+
+# Utility functions for model evaluation
+
+# Evaluate the model on ONE class
+def get_result(
+    model_constructor, 
+    model_params: dict, 
+    class_name: str, 
+    base_path: str = "/content/"):
+
+  # Paths preparation
+  temp_path = os.path.join(base_path, class_name, class_name) # ex. /content/bottle/bottle
+  train_path, test_path  = os.path.join(temp_path, "train", "good"), os.path.join(temp_path, "test")
+  train_paths, test_paths= [train_path], [os.path.join(test_path, path) for path in os.listdir(test_path)]
+
+  # Train & Evaluate
+  model = model_constructor(**model_params)
+  model.fit(train_paths)
+  model.evaluate(test_paths, validation_flag = True)
+
+  # Save model results
+  result = {}
+  result["cm"] = model.cm
+  result["prfs"] = model.prfs
+  result["auc"] = model.auc
+
+  return result
+
+# Evaluate the model on ALL the MVTec classes
+def get_results(
+    model_constructor, 
+    model_params: dict 
+    ):
+
+  results = {}
+  misclassified = average = 0
+
+  for class_name in mvtec_classes:
+    print()
+    print(f'Class: {class_name}')
+    result = get_result(model_constructor, model_params, class_name)
+    results[class_name] = result
+
+    # Average computation
+    misclassified = misclassified + result["cm"][0][1] + result["cm"][1][0]
+    average = average + result['auc']
+  
+  average = average/len(results)
+
+  results["average"] = average
+  results["misclassified"] = misclassified
+  results["model_params"] = model_params
+  
+  return results
+
+# Print the results in a prettier way
+def print_results(
+    results: dict           # output of get_results
+    ):
+  
+  print("\nCLASS BREAKDOWN")
+
+  for className in results:
+    result = results[className]
+    print(f"ROCAUC: {result['auc']:.3f} \t\tf1_score: {result['prfs'][2]:.3f} \t{className}")
+
+  print("\nSUMMARY")
+  print(f"Avg AUC: {results['average']:.3f} \t\tTotal Misclassified: {results['misclassified']:.3f}")
+
+# Saves the results object in a json file
+def save_json(
+    results: dict,          # output of get_results
+    json_name: str          # name of the json file in output
+    ) -> dict:
+  
+  results_json = {}
+
+  for key in results:
+    if key in mvtec_classes:
+      results_json[key] = {
+          "cm": results[key]["cm"].tolist(),
+          "prfs": results[key]["prfs"],
+          "auc": results[key]["auc"]
+      }
+    else:
+      results_json[key] = results[key]
+
+  with open(json_name, 'w', encoding='utf-8') as f:
+    json.dump(results_json, f, indent=4)
+
+  return results_json
+
+'''
+def get_layer_results(model_constructor, model_params):
+  layer_results = {}
+  for layer in model_params["layers"]:
+    print()
+    print(f"Layer: {layer}")
+
+    results = get_results(model_constructor, model_params)
+    print_results(results)
+
+    layer_results[layer] = results
+
+  return layer_results
+'''

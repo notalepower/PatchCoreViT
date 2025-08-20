@@ -1,18 +1,15 @@
 # PatchCore Transformed 
-A Vision Transformer Approach To Anomaly Detection
-> ** NB: This repository is still under development **
+[A Vision Transformer Approach To Anomaly Detection](https://amslaurea.unibo.it/id/eprint/31435/)
+> ** N.B.: This repository is still under development **
 
 ### Models:
 - PatchCore = Abstract Class
 - VanillaPatchCore = PatchCore + CNN
-- PatchCoreV2 = PatchCore + ViT
-- PatchCoreV3 = PatchCore + ViT + Layer Concatenation
-- PatchCoreSWin = PatchCore + SWin
-- PatchCoreSWinV2 = PatchCore + SWin
+- PatchCoreViT = PatchCore + ViT ( + Layer Concatenation) 
+- PatchCoreSWin = PatchCore + SWin ( + Layer Concatenation) 
+- 
 ---
 ## TODO
-- [ ] Controllare in fit il Coreset Subsampling
-- [ ] Implementare PatchCore + SWin
 - [ ] Per ogni parametro in input delle funzioni aggiungere anche il tipo di input che si aspetta
 - [ ] Aggiungere commenti in inglese nel codice
 - [ ] Sistemare le cosine functions

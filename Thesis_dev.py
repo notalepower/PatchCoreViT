@@ -320,7 +320,7 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
             return -1
         else:
             result = roc_auc_score(ground_truth, predictions)
-            print(f"{'Val' if validation_flag else 'Test'}: {title} Level ROCAUC: {result}")
+            print(f"{'Val' if validation_flag else 'Test'}: {title} Level ROCAUC: {result:.3f}")
             return result
         
     def evaluate(self, test_paths: List[str], validation_flag: boolean = True):
