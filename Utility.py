@@ -15,7 +15,7 @@ img_size = (224, 224)
 red_color = (0, 0, 255)
 thickness = 1
 n_patch_img = 196   # number of patches per image   (196 = 14 x 14)
-n_patch_side = int(np.sqrt(n_patch_img))                 # number of patches per side    (14 = √196)
+n_patch_side = int(np.sqrt(n_patch_img))                # number of patches per side    (14 = √196)
 w_patch = int(img_size[0] / n_patch_side)               # width of patches in pixel     (16px = 224 / 14)
 h_patch = int(img_size[1] / n_patch_side)               # height of patches in pixel    (16px = 224 / 14)
 
@@ -73,16 +73,16 @@ def show(input_idx: int, input_path: str, model, save = False, alpha = 0.7):
     
     fig.suptitle('Patch Analysis', fontsize=14, fontweight='bold')
 
-    axs[0,0].set_title('Input image') # magari mettere anche il nome .jpg
+    axs[0,0].set_title('Input image') # 
     axs[0,0].imshow(cv2.cvtColor(input_rect, cv2.COLOR_BGR2RGB))
 
     axs[0,1].set_title(f'{os.path.basename(target_path)}') # magari mettere anche il nome .jpg
     axs[0,1].imshow(cv2.cvtColor(target_rect, cv2.COLOR_BGR2RGB))
 
-    axs[1,0].set_title(f'Patch: {input_idx}') # magari mettere anche il nome .jpg
+    axs[1,0].set_title(f'Patch: {input_idx}') 
     axs[1,0].imshow(cv2.cvtColor(input_crop, cv2.COLOR_BGR2RGB))
 
-    axs[1,1].set_title(f'Score: {model.score:.2f}') # magari mettere anche il nome .jpg
+    axs[1,1].set_title(f'Score: {model.score:.2f}') 
     axs[1,1].imshow(cv2.cvtColor(target_crop, cv2.COLOR_BGR2RGB))
 
     axs[0,2].axis('off') # Removes axis form the plot

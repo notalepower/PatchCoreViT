@@ -16,24 +16,30 @@ Visual representation of PatchCore's Algorithm
 
 ![PatchCore Algorithm](media/patch_analysis.gif)
 
+*The f_coreset parameter was set to 1 to prevent discarding any patches from the memory bank, esuring that the original image associated with the target patch could still be retrieved.*
+
+*With a ViT backbone, an interesting property can be observed: the rarget patch often matches patches from the same spatial region in other images, thanks to the positional encodings.*
+*For instance, a black patch in the top-left corner of an image is more likely to match a black patch in the top-left corner of another image in the memory bank, rather than a black patch in a different location such as the bottom-right.*
+
 ---
 ## Classes
 ### MvTecDataset Class
 This custom class was tailored to fit the directory topography of the [MvTec AD dataset](https://www.mvtec.com/company/research/datasets/mvtec-ad/downloads).
 
 > #### MvTec Directory Topography:
-> - / object_name
+> (*Ex. with 'bottle' class*)
+> - / bottle
 >   - / train 
 >       - / good / *.png
 >   - / test
 >       - / good / *.png
->       - / nok_1 / *.png
+>       - / broken_large / *.png
 >       - ...
->       - / nok_N / *.png
+>       - / contamination / *.png
 >   - / ground_truth / 
->       - / nok_1 / *_mask.png
+>       - / broken_large / *_mask.png
 >       -  ...
->       - / nok_N / *_mask.png
+>       - / contamination / *_mask.png
 
 > ### Attributes:
 > - self.filepaths: List containing the absolute path of the images.

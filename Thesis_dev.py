@@ -261,14 +261,29 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         
         self.memory_bank = self.memory_bank.to(self.device)             # Restores to GPU
 
-    def predict(self, sample: tensor)->Tuple[tensor, tensor]:
+    # Cross Euclidean distance
+    def cdist(self, patch, memory_bank):
+        return torch.cdist(patch, memory_bank, p=2.0)
+
+    # Cross Cosine similarity distance
+    def sdist(self, a:tensor, b:tensor) -> tensor:
+        # a, b must be (1,1536) and (10, 1536)
+        # a = model.patch
+        # b = model.memory_bank.view(1960,-1)
+
+        a_norm = a / a.norm(dim=1)[:, None]
+        b_norm = b / b.norm(dim=1)[:, None]
+        res = torch.mm(a_norm, b_norm.transpose(0,1))
+        return 1 - res
+
+    def predict(self, sample: tensor, compute_distance = cdist)->Tuple[tensor, tensor]:
         
         # Patch extraction
         patch, _ = self.extract_embeddings(sample)
         n_patches, hidden_size = patch.shape 
 
         # Compute maximum distance score s* (equation 6 from the paper)
-        distances = torch.cdist(patch, self.memory_bank, p=2.0)         # L2 norm dist btw test patch with each patch of memory bank
+        distances = compute_distance(patch, self.memory_bank)         # L2 norm dist btw test patch with each patch of memory bank
         dist_score, dist_score_idxs = torch.min(distances, dim=1)       # Val and index of the distance scores (minimum values of each row in distances)
         s_idx = torch.argmax(dist_score)                                # Index of the anomaly candidate patch
         s_star = torch.max(dist_score)                                  # Maximum distance score s*
@@ -327,7 +342,7 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
             print(f"{'Val' if validation_flag else 'Test'}: {title} Level ROCAUC: {result:.3f}")
             return result
         
-    def evaluate(self, test_paths: List[str], validation_flag: boolean = True):
+    def evaluate(self, test_paths: List[str], compute_distance = cdist, validation_flag: boolean = True):
   
         image_preds, image_labels = [], []
         pixel_preds, pixel_labels = [], []
@@ -335,9 +350,9 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
                 
         test_dataloader = self.get_dataloader(test_paths)
         for sample, label, _, mask in tqdm(test_dataloader):
-            # TODO GPU
+            
             start_time = time.time()
-            score, segm_map = self.predict(sample)  # Anomaly Detection
+            score, segm_map = self.predict(sample, compute_distance)  # Anomaly Detection
             end_time = time.time()
 
             elapsed_time = end_time - start_time
@@ -403,132 +418,6 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
     def load_memory_bank(self, path: str): # Load memory bank
         self.memory_bank = torch.load(path)
         self.memory_bank = self.memory_bank.to(self.device) # Load to GPU
-
-    # Cosine similarity
-    def c_sim(self, a:tensor, b:tensor) -> tensor:
-        # a, b must be (1,1536) and (10, 1536)
-        # a = model.patch
-        # b = model.memory_bank.view(1960,-1)
-
-        a_norm = a / a.norm(dim=1)[:, None]
-        b_norm = b / b.norm(dim=1)[:, None]
-        res = torch.mm(a_norm, b_norm.transpose(0,1))
-        return res
-
-    def predict_cosine(self, sample: tensor):
-
-        # Patch extraction
-        patch, _ = self.extract_embeddings(sample)
-        n_patches, hidden_size = patch.shape 
-
-        # Compute maximum distance score s* (equation 6 from the paper)
-        similarities = self.csim(patch, self.memory_bank)         # L2 norm dist btw test patch with each patch of memory bank
-        sim_score, sim_score_idxs = torch.max(similarities, dim=1)       # Val and index of the distance scores (minimum values of each row in distances)
-        s_idx = torch.argmin(sim_score)                                # Index of the anomaly candidate patch
-        s_star = torch.min(sim_score)                                  # Maximum distance score s*
-        m_test_star = torch.unsqueeze(patch[s_idx], dim=0)              # Anomaly candidate patch
-        m_star = self.memory_bank[sim_score_idxs[s_idx]].unsqueeze(0)  # Memory bank patch closest neighbour to m_test_star
-
-        # KNN
-        knn_sims = self.csim(m_star, self.memory_bank)
-        _, nn_idxs = knn_sims.topk(k=self.k_nearest, largest=True)    # Values and indexes of the k smallest elements of knn_dists
-
-        # Compute image-level anomaly score s
-        m_star_neighbourhood = self.memory_bank[nn_idxs[0, 1:]]
-        w_denominator = torch.nn.functional.cosine_similarity(m_test_star, m_star_neighbourhood, dim=1)    # Sum over the exp of l2 norm distances btw m_test_star and the m* neighbourhood
-        norm = torch.sqrt(torch.tensor(hidden_size))                                 # Softmax normalization trick to prevent exp(norm) from becoming infinite
-        
-        s_star, w_denominator = 1 - s_star, 1 - w_denominator 
-
-        w = 1 - (torch.exp(s_star / norm) / torch.sum(torch.exp(w_denominator / norm))) # Equation 7 from the paper
-        
-        s = w * s_star
-
-        # # Segmentation map
-        height = width = int(math.sqrt(n_patches))
-        fmap_size = (height, width)                    # Feature map sizes: h, w
-        segm_map = sim_score.view(1, 1, *fmap_size)    # Reshape distance scores tensor
-        segm_map = torch.nn.functional.interpolate(    # Upscale by bi-linaer interpolation to match the original input resolution
-                        segm_map,
-                        size=(self.image_size, self.image_size),
-                        mode='bilinear'
-                    )
-        segm_map = gaussian_blur(segm_map.cpu())              # Gaussian blur of kernel width = 4
-        
-        # For debugging purposes
-        self.s_idx = s_idx
-        self.sim_score = sim_score
-
-        return s, segm_map
-
-    def evaluate_cosine(self, test_dataloader: DataLoader, validation_flag = True):
-  
-        image_preds, image_labels = [], []
-        pixel_preds, pixel_labels = [], []
-        time_list = []
-
-        segm_maps = []
-
-        for sample, label, filepath, mask in tqdm(test_dataloader):
-            # TODO GPU
-            start_time = time.time()
-
-            image_labels.append(label)
-            pixel_labels.extend(mask.flatten().numpy())
-
-            sample_preprocessed = sample.pixel_values[0].to(self.device)    # preprocess after the 
-                                                                            # get_image transformation
-            score, segm_map = self.predict_cosine(sample_preprocessed)  # Anomaly Detection
-
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            #print(f"Elapsed time: {elapsed_time:.3f} seconds")
-            time_list.append(elapsed_time)
-
-            image_preds.append(score.detach().cpu().numpy())
-            pixel_preds.extend(segm_map.flatten().cpu().numpy())
-            segm_maps.append(segm_map.flatten().cpu().numpy())
-
-        image_labels = np.stack(image_labels)
-        image_preds = np.stack(image_preds)
-        
-        # Check ROC AUC at IMAGE level
-        image_level_rocauc = self.compute_ROC_AUC_score(image_labels, image_preds, validation_flag, "IMAGE")
-
-        # Check ROC AUC at PIXEL level
-        pixel_level_rocauc = self.compute_ROC_AUC_score(pixel_labels, pixel_preds, validation_flag, "PIXEL")
-
-
-        # calculate image-level ROC AUC score
-        if len(np.unique(image_labels))>1:
-            fpr, tpr, thresholds = roc_curve(image_labels, image_preds)
-            distances = np.sqrt((1-tpr)**2 + fpr**2) # Euclidean distance in a 2D space between points
-            best_index = np.argmin(distances)
-            initial_score_threshold = thresholds[best_index]
-            print('[INFO][evaluate] Image Level ROCAUC: %.3f' % (image_level_rocauc))
-            search=10 # -1.5 initial_threshold +1.5
-        else:
-            initial_score_threshold=0
-            search=10 # -10 0 +10
-        
-        ## Find best threshold value
-        if validation_flag:
-            optimal_y_hat, optimal_score_f1score, optimal_score_threshold, initial_score_f1score = get_best_threshold(image_labels, image_preds, initial_score_threshold, search)
-            print(f"[INFO][evaluate] Initial Score Threshold: {initial_score_threshold:.3f} F1Score: {initial_score_f1score:.3f}")
-            print(f"[INFO][evaluate] Optimal Score Threshold: {optimal_score_threshold:.3f} F1Score: {optimal_score_f1score:.3f}")
-            print(f"[INFO][evaluate] Average Inference time with batch_size={test_dataloader.batch_size}: {np.mean(time_list):.3f}s")
-            self.threshold = optimal_score_threshold
-
-            # for debugging purposes
-            self.norm_predictions = optimal_y_hat
-            self.cm = confusion_matrix(image_labels, self.norm_predictions)
-            self.prfs = precision_recall_fscore_support(image_labels, self.norm_predictions, average = 'binary')
-        
-        # for debugging purposes
-        self.ground_truths = image_labels
-        self.predictions = image_preds
-        self.segm_maps = segm_maps
-        self.auc = image_level_rocauc
 
 class VanillaPatchCore(PatchCore): # CNN backbone with layer concatenation
     
