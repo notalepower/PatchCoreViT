@@ -2,23 +2,26 @@
 [A Vision Transformer Approach To Anomaly Detection](https://amslaurea.unibo.it/id/eprint/31435/)
 > ** N.B.: This repository is still under development **
 
+This project was part of my master's thesis. It focused on integrating ViTs into PatchCore as an alternative to traditional CNNs.
+
+
 ### Models:
 - PatchCore = Abstract Class
-- VanillaPatchCore = PatchCore + CNN
-- PatchCoreViT = PatchCore + ViT ( + Layer Concatenation) 
-- PatchCoreSWin = PatchCore + SWin ( + Layer Concatenation) 
-- 
----
-## TODO
-- [ ] Per ogni parametro in input delle funzioni aggiungere anche il tipo di input che si aspetta
-- [ ] Aggiungere commenti in inglese nel codice
-- [ ] Sistemare le cosine functions
-- [ ] Completare l'anomalia a livello di pixel
----
-## MvTecDataset Class
-This custom class was tailored to fit the directory topography of the [MvTec AD dataset](https://www.mvtec.com/company/research/datasets/mvtec-ad/downloads)
+- VanillaPatchCore = PatchCore + CNN Backbone
+- PatchCoreViT = PatchCore + ViT Backbone ( + Layer Concatenation) 
+- PatchCoreSWin = PatchCore + SWin Backbone ( + Layer Concatenation) 
 
-> ### MvTec Directory Topography:
+### Patchcore
+Visual representation of PatchCore's Algorithm
+
+![PatchCore Algorithm](media/patch_analysis.gif)
+
+---
+## Classes
+### MvTecDataset Class
+This custom class was tailored to fit the directory topography of the [MvTec AD dataset](https://www.mvtec.com/company/research/datasets/mvtec-ad/downloads).
+
+> #### MvTec Directory Topography:
 > - / object_name
 >   - / train 
 >       - / good / *.png
@@ -40,8 +43,8 @@ This custom class was tailored to fit the directory topography of the [MvTec AD 
 ## PatchCore Class
 >### Attributes:
 > - self.device
-> - self.model: Backbone used to extract the features.
-> - self.processor: 
+> - self.model
+> - self.processor:
 > - self.features
 > - self.memory_bank
 > - self.f_coreset
@@ -51,29 +54,31 @@ This custom class was tailored to fit the directory topography of the [MvTec AD 
 
 ### Methods:
 > #### __init__ (self, f_coreset, eps_coreset, k_nearest, vanilla, backbone, image_size)
->- Inizializzazione dei parametri iniziali, preparazione della gpu
->- hook salva l'output in self.features
->- register_forward_hook(hook) viene usato per associare ad un layer il suo hook
+>- Parameter initialization, it also prepares te GPU
+>- hook saves the output in self.features
+>- register_forward_hook(hook): used to associate a layer with a hook function
 
 >#### forward (self, sample: tensor)
->- Fa passare l'input dentro self.model
->- Restituisce self.features, ovvero l'ouput dei layer ai quali la hook è stata agganciata
+>- Passes the input through the backbone (self.model)
+>- Returns self.features, which is the output from the layers to which the hook was attached.
 
 >#### extract_embeddings (self, sample)
->- All'interno utilizza la forward per ottenere le feature maps
->- Queste verranno lavorate e trasformate in base al self.model
->- Restituisce patch 
->- Restituisce feature_maps per questioni di debug
+>- It uses forward method to obtain the feature maps
+>- Feature maps will be processed and transformed based on the type of backbone (self.model)
+>- Returns a patch
+>- Returns feature_maps (for debugging purposes)
 
 >#### fit (self, train_dataloader: DataLoader,  scale: int=1) -> None:
->- Training della rete, all'interno viene chiamata extract_embeddings
->- Patch vengono salvati all'interno del memmory bank
->- Viene applicato il coreset subsampling in cui solo i patch più significativi vengono mantenuti
+>- Network training, inside it extract_embeddings is called.
+>- Patches are saved inside the memory bank (self.memory_bank)
+>- Coreset subsampling prunes the memory bank by keeping the most significant patches.
 
 >#### evaluate (self, test_dataloader: DataLoader, validation_flag = True):
->- Calcola F1 score
+>- Compute F1 score
 
-### Other:
-- save_memory_bank: salva la memory bank per evitare di fare la train ogni volta.
-- load_memory_bank: carica la memory bank 
-- inference: funzione usata da Manuel
+### TODO:
+- [ ] Fix function Inference (implemented by Manuel)
+- [ ] For each input parameter add the types
+- [ ] Add English comments in the code
+- [ ] Fix cosine functions
+- [ ] Complete anomaly at pixel level

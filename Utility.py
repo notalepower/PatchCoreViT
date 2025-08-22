@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from tqdm import tqdm
 
-mvtec_classes = [ "bottle", "cable", "capsule", "carpet", "grid", "hazelnut", "leather", "metal_nut", "pill", "screw", "tile", "toothbrush", "transistor", "wood", "zipper" ]
+# mvtec_classes = [ "bottle", "cable", "capsule", "carpet", "grid", "hazelnut", "leather", "metal_nut", "pill", "screw", "tile", "toothbrush", "transistor", "wood", "zipper" ]
+mvtec_classes = [ "bottle", "cable"]
 img_size = (224, 224)
 red_color = (0, 0, 255)
 thickness = 1
@@ -54,17 +55,18 @@ def get_plot_images(idx: int, path: str):
     img_rect = cv2.rectangle(img_resized.copy(), top_left, bottom_right, color=red_color, thickness=thickness)
     img_crop = img_resized.copy()[x : x + h_patch, y : y + w_patch]
     
-    return img_rect, img_crop
+    return img_rect, img_crop, img_resized
 
-def show(input_idx: int, input_path: str, model, save = False):
+# Given an patch index it creates a plot 
+def show(input_idx: int, input_path: str, model, save = False, alpha = 0.7):
 
     memory_bank_idx = model.dist_score_idxs[input_idx]
     target_path_idx = memory_bank_idx // n_patch_img
     target_idx = memory_bank_idx % n_patch_img
     target_path = model.memory_bank_paths[target_path_idx][0] # TODO: Perché restituisce una tupla
 
-    input_rect, input_crop = get_plot_images(input_idx, input_path)
-    target_rect, target_crop = get_plot_images(target_idx, target_path)
+    input_rect, input_crop, input_resized = get_plot_images(input_idx, input_path)
+    target_rect, target_crop, _  = get_plot_images(target_idx, target_path)
 
     # 2x2 plot
     fig, axs = plt.subplots(2, 3, figsize=(8, 8))
@@ -77,17 +79,21 @@ def show(input_idx: int, input_path: str, model, save = False):
     axs[0,1].set_title(f'{os.path.basename(target_path)}') # magari mettere anche il nome .jpg
     axs[0,1].imshow(cv2.cvtColor(target_rect, cv2.COLOR_BGR2RGB))
 
-    axs[1,0].set_title(f'Patch: {input_idx}, th:0.5') # magari mettere anche il nome .jpg
+    axs[1,0].set_title(f'Patch: {input_idx}') # magari mettere anche il nome .jpg
     axs[1,0].imshow(cv2.cvtColor(input_crop, cv2.COLOR_BGR2RGB))
 
-    axs[1,1].set_title(f'Score: 0.25, result: OK') # magari mettere anche il nome .jpg
+    axs[1,1].set_title(f'Score: {model.score:.2f}') # magari mettere anche il nome .jpg
     axs[1,1].imshow(cv2.cvtColor(target_crop, cv2.COLOR_BGR2RGB))
 
     axs[0,2].axis('off') # Removes axis form the plot
     axs[1,2].axis('off') # Removes axis form the plot
     
-    axs[0,2].text(0, 0.5,
-        "Legenda o info extra\n- Blue: dataset A\n- Rosso: dataset B",
+    axs[0,2].set_title(f'Heat map')
+    axs[0,2].imshow((cv2.resize(np.array(input_resized), img_size)))
+    axs[0,2].imshow(model.segm_map.reshape(img_size), alpha=alpha)
+
+    axs[1,2].text(0, 0.5,
+        "Legend or extra info\n- Blue: dataset A\n- Red: dataset B",
         ha='left', va='center', fontsize=10,
         bbox={'facecolor': 'green', 'alpha': 0.5, 'pad': 10}
     )
@@ -101,23 +107,24 @@ def show(input_idx: int, input_path: str, model, save = False):
         plt.subplots_adjust(top=0.93, bottom=0.4, wspace=0.2)
         plt.show()
 
-def create_gif(input_path: str, model):
+# Creates a gif given a trained model
+def create_gif(input_path: str, model, duration:int=100, output_path:str="patch_analysis.gif" ):
     
     n_patch_img = model.memory_bank.shape[0] // len(model.memory_bank_paths)
 
     img = Image.open(input_path).convert("RGB")
     sample = model.processor(img)
     sample_torch = torch.Tensor(sample['pixel_values'][0]).unsqueeze(0)
-    sample['pixel_values'][0]=sample_torch
+    sample['pixel_values'][0] = sample_torch
     
-    _, segm_map = model.predict(sample)
+    _, _ = model.predict(sample)
 
-    for idx in tqdm(range(n_patch_img)):
-        show(idx, input_path, model, save=True) # Change to True
+    # For each patch it creates a frame
+    [ show(idx, input_path, model, save = True) for idx in tqdm(range(n_patch_img)) ]# Change to save = True
     
     frames_paths = sorted([f for f in os.listdir('tmp') if f.endswith(('.png', '.jpg', '.jpeg'))])
     frames = [Image.open(os.path.join('tmp', f)) for f in frames_paths]
-    frames[0].save("patch_analysis.gif", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    frames[0].save(output_path, save_all=True, append_images=frames[1:], duration=duration, loop=0)
     
     shutil.rmtree('tmp')
 
@@ -144,7 +151,8 @@ def get_result(
   result = {}
   result["cm"] = model.cm
   result["prfs"] = model.prfs
-  result["auc"] = model.auc
+  result["auc_img"] = model.auc_img
+  result["auc_pxl"] = model.auc_pxl
 
   return result
 
@@ -155,7 +163,7 @@ def get_results(
     ):
 
   results = {}
-  misclassified = average = 0
+  misclassified = avg_img = avg_pxl = 0
 
   for class_name in mvtec_classes:
     print()
@@ -165,11 +173,15 @@ def get_results(
 
     # Average computation
     misclassified = misclassified + result["cm"][0][1] + result["cm"][1][0]
-    average = average + result['auc']
+    avg_img = avg_img + result['auc_img']
+    avg_pxl = avg_pxl + result['auc_pxl']
   
-  average = average/len(results)
+  avg_auc_img = avg_img/len(results)
+  avg_auc_pxl = avg_pxl/len(results)
 
-  results["average"] = average
+  results["avg_auc_img"] = avg_auc_img
+  results["avg_auc_pxl"] = avg_auc_pxl
+
   results["misclassified"] = misclassified
   results["model_params"] = model_params
   
@@ -180,14 +192,14 @@ def print_results(
     results: dict           # output of get_results
     ):
   
-  print("\nCLASS BREAKDOWN")
+  print("\n\nCLASS BREAKDOWN")
 
-  for className in results:
+  for className in mvtec_classes:
     result = results[className]
-    print(f"ROCAUC: {result['auc']:.3f} \t\tf1_score: {result['prfs'][2]:.3f} \t{className}")
+    print(f"ROCAUC img: {result['auc_img']:.3f}\tROCAUC pxl: {result['auc_pxl']:.3f}\tf1_score: {result['prfs'][2]:.3f} \t{className}")
 
   print("\nSUMMARY")
-  print(f"Avg AUC: {results['average']:.3f} \t\tTotal Misclassified: {results['misclassified']:.3f}")
+  print(f"Avg ROCAUC img: {results['avg_auc_img']:.3f}\nAvg ROCAUC pxl: {results['avg_auc_pxl']:.3f}\nTotal Misclassified: {results['misclassified']}")
 
 # Saves the results object in a json file
 def save_json(
@@ -202,10 +214,20 @@ def save_json(
       results_json[key] = {
           "cm": results[key]["cm"].tolist(),
           "prfs": results[key]["prfs"],
-          "auc": results[key]["auc"]
+          "auc_img": results[key]["auc_img"],
+          "auc_pxl": results[key]["auc_pxl"]
       }
     else:
-      results_json[key] = results[key]
+      match key:
+        case "misclassified":
+          results_json[key] = results[key].item()
+        case "avg_auc_img":
+          results_json[key] = results[key].item()
+        case "avg_auc_pxl":
+          results_json[key] = results[key].item()
+        case _:
+          results_json[key] = results[key]
+
 
   with open(json_name, 'w', encoding='utf-8') as f:
     json.dump(results_json, f, indent=4)

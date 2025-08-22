@@ -258,7 +258,8 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
             )
 
             self.memory_bank = self.memory_bank[coreset_idx]            # Filters the relevant patches
-            self.memory_bank = self.memory_bank.to(self.device)         # Restores to GPU
+        
+        self.memory_bank = self.memory_bank.to(self.device)             # Restores to GPU
 
     def predict(self, sample: tensor)->Tuple[tensor, tensor]:
         
@@ -311,6 +312,9 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
 
         self.knn_dists = knn_dists
         self.nn_idxs = nn_idxs
+        
+        self.score = s
+        self.segm_map= segm_map
 
         return s, segm_map
 
@@ -384,7 +388,9 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         self.ground_truths = image_labels
         self.predictions = image_preds
         self.segm_maps = pixel_preds
-        self.auc = image_level_rocauc
+        
+        self.auc_img = image_level_rocauc
+        self.auc_pxl = pixel_level_rocauc
 
     # Utilies Functions
     def get_dataloader(self, paths: List[str]) -> DataLoader:
