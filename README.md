@@ -84,6 +84,7 @@ This custom class was tailored to fit the directory topography of the [MvTec AD 
 
 ### TODO:
 - [ ] Fix function Inference (implemented by Manuel)
+- [ ] Fix function Inference (implemented by Manuel)
 - [ ] For each input parameter add the types
 - [ ] Add English comments in the code
 - [ ] Fix cosine functions

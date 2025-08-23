@@ -19,7 +19,7 @@ n_patch_side = int(np.sqrt(n_patch_img))                # number of patches per
 w_patch = int(img_size[0] / n_patch_side)               # width of patches in pixel     (16px = 224 / 14)
 h_patch = int(img_size[1] / n_patch_side)               # height of patches in pixel    (16px = 224 / 14)
 
-# Utility functions for images analysis
+# UTILITY FUNCTIONS FOR IMAGE ANALYSIS
 
 def plot_gridded_image(img_path: str):
     img = cv2.imread(img_path)
@@ -73,24 +73,31 @@ def show(input_idx: int, input_path: str, model, save = False, alpha = 0.7):
     
     fig.suptitle('Patch Analysis', fontsize=14, fontweight='bold')
 
-    axs[0,0].set_title('Input image') # 
-    axs[0,0].imshow(cv2.cvtColor(input_rect, cv2.COLOR_BGR2RGB))
+    axs[0,0].set_title('Input image') 
+    input_rect_img = cv2.cvtColor(input_rect, cv2.COLOR_BGR2RGB)
+    axs[0,0].imshow(input_rect_img)
 
     axs[0,1].set_title(f'{os.path.basename(target_path)}') # magari mettere anche il nome .jpg
-    axs[0,1].imshow(cv2.cvtColor(target_rect, cv2.COLOR_BGR2RGB))
+    target_rect_img = cv2.cvtColor(target_rect, cv2.COLOR_BGR2RGB)
+    axs[0,1].imshow(target_rect_img)
 
     axs[1,0].set_title(f'Patch: {input_idx}') 
-    axs[1,0].imshow(cv2.cvtColor(input_crop, cv2.COLOR_BGR2RGB))
+    input_crop_img = cv2.cvtColor(input_crop, cv2.COLOR_BGR2RGB)
+    axs[1,0].imshow(input_crop_img)
 
     axs[1,1].set_title(f'Score: {model.score:.2f}') 
-    axs[1,1].imshow(cv2.cvtColor(target_crop, cv2.COLOR_BGR2RGB))
+    target_crop_img = cv2.cvtColor(target_crop, cv2.COLOR_BGR2RGB)
+    axs[1,1].imshow(target_crop_img)
 
     axs[0,2].axis('off') # Removes axis form the plot
     axs[1,2].axis('off') # Removes axis form the plot
     
     axs[0,2].set_title(f'Heat map')
-    axs[0,2].imshow((cv2.resize(np.array(input_resized), img_size)))
-    axs[0,2].imshow(model.segm_map.reshape(img_size), alpha=alpha)
+    axs[0,2].imshow(input_resized)
+    heat_map = model.segm_map.reshape(img_size)
+    axs[0,2].imshow(heat_map, alpha=alpha)
+    heatmap_img = cv2.addWeighted(heat_map, alpha, input_resized, 1 - alpha, 0)
+    cv2.imwrite("temp.png", heatmap_img)
 
     axs[1,2].text(0, 0.5,
         "Legend or extra info\n- Blue: dataset A\n- Red: dataset B",
@@ -99,9 +106,9 @@ def show(input_idx: int, input_path: str, model, save = False, alpha = 0.7):
     )
 
     if save:
-        if not os.path.exists('tmp'):
-            os.makedirs('tmp')
-        plt.savefig(f'tmp/{input_idx:03d}.png')
+        if not os.path.exists('tmp_img'):
+            os.makedirs('tmp_img')
+        plt.savefig(f'tmp_img/{input_idx:03d}.png')
         plt.close()
     else:
         plt.subplots_adjust(top=0.93, bottom=0.4, wspace=0.2)
@@ -126,9 +133,9 @@ def create_gif(input_path: str, model, duration:int=100, output_path:str="patch_
     frames = [Image.open(os.path.join('tmp', f)) for f in frames_paths]
     frames[0].save(output_path, save_all=True, append_images=frames[1:], duration=duration, loop=0)
     
-    shutil.rmtree('tmp')
+    # shutil.rmtree('tmp_img')
 
-# Utility functions for model evaluation
+# UTILITY FUNCTIONS FOR MODEL EVALUATION
 
 # Evaluate the model on ONE class
 def get_result(
