@@ -173,7 +173,6 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         self.k_nearest = k_nearest      # k parameter for K-NN search
         self.threshold = None
 
-    # @abstractmethod
     def get_sample(self, input_path:str):
         img = Image.open(input_path).convert("RGB")
         sample = self.processor(img)

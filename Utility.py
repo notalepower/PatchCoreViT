@@ -65,6 +65,8 @@ def show(input_idx: int, input_path: str, model, save = False, alpha = 0.7):
     target_idx = memory_bank_idx % n_patch_img
     target_path = model.memory_bank_paths[target_path_idx][0] # TODO: Perché restituisce una tupla
 
+    target_score = model.dist_score[input_idx]
+
     input_rect, input_crop, input_resized = get_plot_images(input_idx, input_path)
     target_rect, target_crop, _  = get_plot_images(target_idx, target_path)
 
@@ -85,7 +87,7 @@ def show(input_idx: int, input_path: str, model, save = False, alpha = 0.7):
     input_crop_img = cv2.cvtColor(input_crop, cv2.COLOR_BGR2RGB)
     axs[1,0].imshow(input_crop_img)
 
-    axs[1,1].set_title(f'Score: {model.score:.2f}') 
+    axs[1,1].set_title(f'Score: {target_score:.2f}') 
     target_crop_img = cv2.cvtColor(target_crop, cv2.COLOR_BGR2RGB)
     axs[1,1].imshow(target_crop_img)
 
@@ -96,8 +98,8 @@ def show(input_idx: int, input_path: str, model, save = False, alpha = 0.7):
     axs[0,2].imshow(input_resized)
     heat_map = model.segm_map.reshape(img_size)
     axs[0,2].imshow(heat_map, alpha=alpha)
-    heatmap_img = cv2.addWeighted(heat_map, alpha, input_resized, 1 - alpha, 0)
-    cv2.imwrite("temp.png", heatmap_img)
+    # heatmap_img = cv2.addWeighted(heat_map.numpy(), alpha, input_resized, 1 - alpha, 0)
+    # cv2.imwrite("temp.png", heatmap_img)
 
     axs[1,2].text(0, 0.5,
         "Legend or extra info\n- Blue: dataset A\n- Red: dataset B",
@@ -115,22 +117,18 @@ def show(input_idx: int, input_path: str, model, save = False, alpha = 0.7):
         plt.show()
 
 # Creates a gif given a trained model
-def create_gif(input_path: str, model, duration:int=100, output_path:str="patch_analysis.gif" ):
+def create_gif(input_path: str, model, compute_distance, duration:int=100, output_path:str="patch_analysis.gif" ):
     
     n_patch_img = model.memory_bank.shape[0] // len(model.memory_bank_paths)
 
-    img = Image.open(input_path).convert("RGB")
-    sample = model.processor(img)
-    sample_torch = torch.Tensor(sample['pixel_values'][0]).unsqueeze(0)
-    sample['pixel_values'][0] = sample_torch
-    
-    _, _ = model.predict(sample)
+    sample = model.get_sample(input_path)
+    _, _ = model.predict(sample, compute_distance)
 
     # For each patch it creates a frame
     [ show(idx, input_path, model, save = True) for idx in tqdm(range(n_patch_img)) ]# Change to save = True
     
-    frames_paths = sorted([f for f in os.listdir('tmp') if f.endswith(('.png', '.jpg', '.jpeg'))])
-    frames = [Image.open(os.path.join('tmp', f)) for f in frames_paths]
+    frames_paths = sorted([f for f in os.listdir('tmp_img') if f.endswith(('.png', '.jpg', '.jpeg'))])
+    frames = [Image.open(os.path.join('tmp_img', f)) for f in frames_paths]
     frames[0].save(output_path, save_all=True, append_images=frames[1:], duration=duration, loop=0)
     
     # shutil.rmtree('tmp_img')
