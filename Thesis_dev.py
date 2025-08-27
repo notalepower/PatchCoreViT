@@ -152,6 +152,7 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         torch.manual_seed(seed)
 
         # Model creation
+        self.backbone = backbone
         self.model = AutoModel.from_pretrained(backbone)
         self.processor = AutoImageProcessor.from_pretrained(backbone)
         self.layers = layers
@@ -282,8 +283,10 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         res = torch.mm(a_norm, b_norm.transpose(0,1))
         return 1 - res
 
-    def predict(self, sample: tensor, compute_distance = cdist)->Tuple[tensor, tensor]:
+    def predict(self, sample: tensor, compute_distance = None)->Tuple[tensor, tensor]:
         
+        compute_distance = self.cdist if compute_distance == None else compute_distance
+            
         # Patch extraction
         patch, _ = self.extract_embeddings(sample)
         n_patches, hidden_size = patch.shape 
@@ -633,6 +636,11 @@ class VanillaPatchCore(PatchCore): # CNN backbone with layer concatenation
             for line in f:
                 print(line, end='')  # end='' avo
 
+    # Override
+    def __str__(self):
+        # TODO: Add other information in a dictionary
+        return "CNN"  
+
 class PatchCoreViT(PatchCore): # ViT backbone with layer concatenation
     
     # Override
@@ -813,6 +821,10 @@ class PatchCoreViT(PatchCore): # ViT backbone with layer concatenation
             for line in f:
                 print(line, end='')  # end='' avo
 
+    # Override
+    def __str__(self):
+        return "ViT"      
+
 class PatchCoreSWin(PatchCore): # SWin backbone with layer concatenation
     
     # Override
@@ -850,5 +862,10 @@ class PatchCoreSWin(PatchCore): # SWin backbone with layer concatenation
         # features_maps = torch.cat([features_maps], 2) # concatenates the feature's levels
         patch = features_maps.squeeze()
         return patch, features_maps
+
+    # Override
+    def __str__(self):
+        # TODO: Add other information in a dictionary
+        return "SWin"           
         
 

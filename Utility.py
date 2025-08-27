@@ -58,7 +58,7 @@ def get_plot_images(idx: int, path: str):
     return img_rect, img_crop, img_resized
 
 # Given an patch index it creates a plot 
-def show(input_idx: int, input_path: str, model, save = False, alpha = 0.7):
+def show(input_idx:int, input_path:str, model, distance_label = "Euclidean", save = False, alpha = 0.7):
 
     memory_bank_idx = model.dist_score_idxs[input_idx]
     target_path_idx = memory_bank_idx // n_patch_img
@@ -71,7 +71,7 @@ def show(input_idx: int, input_path: str, model, save = False, alpha = 0.7):
     target_rect, target_crop, _  = get_plot_images(target_idx, target_path)
 
     # 2x2 plot
-    fig, axs = plt.subplots(2, 3, figsize=(8, 8))
+    fig, axs = plt.subplots(2, 3, figsize=(10, 10))
     
     fig.suptitle('Patch Analysis', fontsize=14, fontweight='bold')
 
@@ -102,7 +102,7 @@ def show(input_idx: int, input_path: str, model, save = False, alpha = 0.7):
     # cv2.imwrite("temp.png", heatmap_img)
 
     axs[1,2].text(0, 0.5,
-        "Legend or extra info\n- Blue: dataset A\n- Red: dataset B",
+        f"- Type: {model}\n- Backbone:\n{model.backbone.split('/')[1]}\n- Distance: {distance_label}",
         ha='left', va='center', fontsize=10,
         bbox={'facecolor': 'green', 'alpha': 0.5, 'pad': 10}
     )
@@ -124,13 +124,15 @@ def create_gif(input_path: str, model, compute_distance, duration:int=100, outpu
     sample = model.get_sample(input_path)
     _, _ = model.predict(sample, compute_distance)
 
+    distance_label = "Euclidean" if compute_distance == model.cdist else "Cosine similarity"
+
     # For each patch it creates a frame
-    [ show(idx, input_path, model, save = True) for idx in tqdm(range(n_patch_img)) ]# Change to save = True
+    [ show(idx, input_path, model, distance_label, save = True) for idx in tqdm(range(n_patch_img)) ]# Change to save = True
     
     frames_paths = sorted([f for f in os.listdir('tmp_img') if f.endswith(('.png', '.jpg', '.jpeg'))])
     frames = [Image.open(os.path.join('tmp_img', f)) for f in frames_paths]
     frames[0].save(output_path, save_all=True, append_images=frames[1:], duration=duration, loop=0)
-    
+      
     # shutil.rmtree('tmp_img')
 
 # UTILITY FUNCTIONS FOR MODEL EVALUATION

@@ -11,15 +11,25 @@ This project was part of my master's thesis. It focused on integrating ViTs into
 - PatchCoreViT = PatchCore + ViT Backbone ( + Layer Concatenation) 
 - PatchCoreSWin = PatchCore + SWin Backbone ( + Layer Concatenation) 
 
-### Patchcore
-Visual representation of PatchCore's Algorithm
+# Patchcore
+
+## Visual representation of PatchCore's Algorithm
 
 ![PatchCore Algorithm](media/patch_analysis.gif)
 
 *The f_coreset parameter was set to 1 to prevent discarding any patches from the memory bank, esuring that the original image associated with the target patch could still be retrieved.*
 
-*With a ViT backbone, an interesting property can be observed: the rarget patch often matches patches from the same spatial region in other images, thanks to the positional encodings.*
+*With a ViT backbone, an interesting property can be observed: the target patch often matches patches from the same spatial region in other images, thanks to the positional encodings.*
 *For instance, a black patch in the top-left corner of an image is more likely to match a black patch in the top-left corner of another image in the memory bank, rather than a black patch in a different location such as the bottom-right.*
+
+
+## Heatmap comparison
+
+![Distance comparison](media/heatmap_comparison.png)
+
+*The choice of distance affects the appeareance of PatchCore heatmaps.
+Cosine similarity is bounded between 0 and 1, producing a well-defined heatmap with clear constrast, making anomalous regions easier to identify.
+Euclidean distance, in contrast, is unbounded, resulting in a more spread-out range of values and a less distinct heatmap, where anomalies are visually less prominent.*
 
 ---
 ## Classes
