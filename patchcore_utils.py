@@ -102,7 +102,7 @@ def show(input_idx:int, input_path:str, model, distance_label = "Euclidean", sav
     # cv2.imwrite("temp.png", heatmap_img)
 
     axs[1,2].text(0, 0.5,
-        f"- Type: {model}\n- Backbone:\n{model.backbone.split('/')[1]}\n- Distance: {distance_label}",
+        f"- Type: {model}\n- Backbone:\n{model.backbone.split('/')[1]}\n- Layers:\n{model.layers}\n- Distance: {distance_label}",
         ha='left', va='center', fontsize=10,
         bbox={'facecolor': 'green', 'alpha': 0.5, 'pad': 10}
     )
@@ -117,14 +117,14 @@ def show(input_idx:int, input_path:str, model, distance_label = "Euclidean", sav
         plt.show()
 
 # Creates a gif given a trained model
-def create_gif(input_path: str, model, compute_distance, duration:int=100, output_path:str="patch_analysis.gif" ):
+def create_gif(input_path: str, model, metric, duration:int=100, output_path:str="patch_analysis.gif" ):
     
     n_patch_img = model.memory_bank.shape[0] // len(model.memory_bank_paths)
 
     sample = model.get_sample(input_path)
-    _, _ = model.predict(sample, compute_distance)
+    _, _ = model.predict(sample, metric)
 
-    distance_label = "Euclidean" if compute_distance == model.cdist else "Cosine similarity"
+    distance_label = "Euclidean" if metric == model.cdist else "Cosine similarity"
 
     # For each patch it creates a frame
     [ show(idx, input_path, model, distance_label, save = True) for idx in tqdm(range(n_patch_img)) ]# Change to save = True

@@ -152,13 +152,12 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         torch.manual_seed(seed)
 
         # Model creation
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.backbone = backbone
-        self.model = AutoModel.from_pretrained(backbone)
+        self.model = AutoModel.from_pretrained(backbone).to(self.device)
         self.processor = AutoImageProcessor.from_pretrained(backbone)
         self.layers = layers
         self.set_hooks()
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = self.model.to(self.device)
         self.seed = seed
         print(f"[INFO][__init__] Model PatchCore loaded on device: {self.device}")
 
@@ -283,16 +282,16 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         res = torch.mm(a_norm, b_norm.transpose(0,1))
         return 1 - res
 
-    def predict(self, sample: tensor, compute_distance = None)->Tuple[tensor, tensor]:
+    def predict(self, sample: tensor, metric = None)->Tuple[tensor, tensor]:
         
-        compute_distance = self.cdist if compute_distance == None else compute_distance
+        metric = self.cdist if metric == None else metric
             
         # Patch extraction
         patch, _ = self.extract_embeddings(sample)
         n_patches, hidden_size = patch.shape 
 
         # Compute maximum distance score s* (equation 6 from the paper)
-        distances = compute_distance(patch, self.memory_bank)         # L2 norm dist btw test patch with each patch of memory bank
+        distances = metric(patch, self.memory_bank)                     # L2 norm dist btw test patch with each patch of memory bank
         dist_score, dist_score_idxs = torch.min(distances, dim=1)       # Val and index of the distance scores (minimum values of each row in distances)
         s_idx = torch.argmax(dist_score)                                # Index of the anomaly candidate patch
         s_star = torch.max(dist_score)                                  # Maximum distance score s*
@@ -351,7 +350,7 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
             print(f"{'Val' if validation_flag else 'Test'}: {title} Level ROCAUC: {result:.3f}")
             return result
         
-    def evaluate(self, test_paths: List[str], compute_distance = cdist, validation_flag: boolean = True):
+    def evaluate(self, test_paths: List[str], metric = cdist, validation_flag: boolean = True):
   
         image_preds, image_labels = [], []
         pixel_preds, pixel_labels = [], []
@@ -361,7 +360,7 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         for sample, label, _, mask in tqdm(test_dataloader):
             
             start_time = time.time()
-            score, segm_map = self.predict(sample, compute_distance)  # Anomaly Detection
+            score, segm_map = self.predict(sample, metric)  # Anomaly Detection
             end_time = time.time()
 
             elapsed_time = end_time - start_time
@@ -478,164 +477,6 @@ class VanillaPatchCore(PatchCore): # CNN backbone with layer concatenation
             patch = patch.reshape(patch.shape[1], -1).T   # Craete a column tensor
             return patch, feature_maps
     
-    # TODO: Questo lo puoi controllare per ultimissimo
-    def inference(self, folders_input, folder_results,  score_threshold, scoremap_threshold, transform = None):
-        
-        # TODO USE THE DEFAULT ONE
-        if transform is None:
-            transform = T.Compose([
-                T.ToPILImage(),
-                # T.GaussianBlur(5, sigma=2),
-                # T.ColorJitter(brightness=(0.5, 0.5)),
-                # T.Grayscale(num_output_channels=3),
-                # T.RandomPosterize(4, p=1),
-                T.Resize(256, interpolation=T.InterpolationMode.BICUBIC),
-                T.CenterCrop(224),
-                T.ToTensor(),
-                T.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
-            ])
-          
-        score_map_list = []
-        score_list = []
-        y_pred_list = []
-        y_true_list = []
-        fp_list = []
-        fn_list = []
-        tp_list = []
-        tn_list = []
-        time_list = []
-        for folder_in in folders_input:
-            folder_name = folder_in.split("/")[-1]
-            folder_out = f"{folder_results}/{folder_name}"
-            if os.path.exists(folder_out):
-                shutil.rmtree(folder_out)	
-            os.makedirs(folder_out)
-            print(folder_in)
-            filenames = [os.path.join(folder_in, name) for name in os.listdir(folder_in)]
-            for filename in tqdm(filenames):
-                name = os.path.basename(filename)
-                #print (filename)
-                im = Image.open(filename).convert("RGB")
-                im_np = np.array(im)
-                #####
-                # center = (im_np.shape[0]//2, im_np.shape[1]//2) 
-                # im_np = cv2.circle(im_np, center, 30, (255,255,255), -1)
-                #####
-                im_t = transform(im_np)    
-                sample = im_t.unsqueeze(0)
-                
-                # TODO GPU
-                sample = sample.to(self.device)            
-                score, score_map = self.predict(sample)  # Anomaly Detection
-
-                score = score.cpu().numpy()
-                score_map = score_map.cpu().numpy()[0,:,:]  # 1x224x224 # TODO if process batch  modify
-                
-                score_list.append(score)
-                score_map_list.extend(score_map.flatten())
-                ###
-                self.im_np = im_np
-                self.score_map = score_map
-                ###
-                out = get_results(im_np, score_map, threshold=scoremap_threshold)  
-                
-                # Chech score
-                y_pred = 0
-                res = "Good"
-                if score > score_threshold:
-                    y_pred = 1
-                    res = "Anomaly"
-
-                # check ideal
-                y_true = 1
-                if "good" in str(filename):
-                    y_true = 0
-                    
-                y_pred_list.append(y_pred)
-                y_true_list.append(y_true)
-                
-                err = False
-                if y_true==0 and y_pred==1:
-                    #  False Negative: Ho predetto nok= y_pred=1 ma in realtà era good y_true=0
-                    fn_list.append(str(filename))
-                    err = True
-                elif y_true==1 and y_pred==0:
-                    #  False Positive: Ho predetto good= y_pred=0 ma in realtà era nok y_true=1
-                    fp_list.append(str(filename))
-                    err = True
-                elif y_true==0 and y_pred==0:
-                    #  True Negative: Ho predetto good= y_pred=0 e in realtà è good y_true=0
-                    tn_list.append(str(filename))
-                else:
-                    #  True Positive: Ho predetto npk= y_pred=1 e in realtà è nok y_true=1
-                    tp_list.append(str(filename))
-                                    
-
-                folder = filename.split("/")[-2]
-                f = os.path.basename(filename)
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                cv2.putText(out, f'Score: {score:.3f} Result: {res}', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-                filepath_out = os.path.join(folder_out,f)
-                #print(filepath_out)
-                out = cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
-                cv2.imwrite(filepath_out, out)
-
-
-        y_true = np.array(y_true_list)
-        y_pred = np.array(y_pred_list)
-        TP = len(tp_list)
-        TN = len(tn_list)
-        FN = len(fn_list)
-        FP = len(fp_list)
-        recall = TP/(TP+FN) #recall_score(y_true, y_pred)
-        precision = TP/(TP+FP) #precision_score(y_true, y_pred)
-        f1score = 2 * (precision * recall) / (precision + recall) # f1_score(y_true, y_pred)
-        fp = '\n'.join(fp_list)
-        fn = '\n'.join(fn_list)
-        code_to_write=f"""
-
-        --------------------------------------------------------------------------------------------
-
-
-        --------------------------------------------------------------------------------------------
-        Precision:  TP/(TP+FP) = {precision*100:.2f} %
-        Percentuale che mi dice quanto l'algoritmo e bravo a individuare i casi anomali
-        FP: e un  numero che indica quanto volte l'algoritmo ha predetto good ma in realte era nok
-
-        Recall TP/(TP+FN) = {recall*100:.2f} %
-        Percentuale che mi dice quanto l'algoritmo e bravo a individuare i casi non anomali
-        FN: e un  numero che indica quanto volte l'algoritmo ha predetto nok ma in realte era good
-
-        F1 Score = 2* (Precision*Recall) / (Precision+Recall) = {f1score*100:.2f} %
-        Metrica che bilancia precision e recall
-        --------------------------------------------------------------------------------------------
-
-        --------------------------------------------------------------------------------------------
-                    Actual/Predicted    | Predicted Anomaly (1)  | Predicted Good (0)"
-                    Actual anomaly (1)  |        TP={TP}         |       FP={FP} 
-                    Actual good    (0)  |        FN={FN}         |       TN={TN}    
-        --------------------------------------------------------------------------------------------
-
-        --------------------------------------------------------------------------------------------
-        [INFO][evaluate][False Positive] Ho predetto good= y_pred=0 ma in realte era nok y_true=1
-        {fp}
-        --------------------------------------------------------------------------------------------
-
-        --------------------------------------------------------------------------------------------
-        [INFO][evaluate][False Negative] Ho predetto nok= y_pred=1 ma in realtà era good y_true=0
-        {fn}
-        --------------------------------------------------------------------------------------------
-        """
-        filepath_results=f"{folder_results}/results.txt"
-        with open(filepath_results, 'w') as file:
-            file.write(code_to_write)
-
-
-        with open(filepath_results, 'r') as f:
-            # Read the contents of the file and print them line by line
-            for line in f:
-                print(line, end='')  # end='' avo
-
     # Override
     def __str__(self):
         # TODO: Add other information in a dictionary
@@ -675,152 +516,6 @@ class PatchCoreViT(PatchCore): # ViT backbone with layer concatenation
         patch = feature_maps.squeeze()
         return patch, feature_maps
     
-    # TODO: Questo lo puoi controllare per ultimissimo
-    def inference(self, folders_input, folder_results,  score_threshold, scoremap_threshold, transform = None):
-        
-        # TODO: USE THE DEFAULT ONE
-        if transform is None:
-            transform = T.Compose([
-                T.ToPILImage(),
-                # T.GaussianBlur(5, sigma=2),
-                # T.ColorJitter(brightness=(0.5, 0.5)),
-                # T.Grayscale(num_output_channels=3),
-                # T.RandomPosterize(4, p=1),
-                T.Resize(256, interpolation=T.InterpolationMode.BICUBIC),
-                T.CenterCrop(224),
-                T.ToTensor(),
-                T.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
-            ])
-          
-        score_map_list = []
-        score_list = []
-        y_pred_list = []
-        y_true_list = []
-        fp_list = []
-        fn_list = []
-        tp_list = []
-        tn_list = []
-        time_list = []
-        for folder_in in folders_input:
-            folder_name = folder_in.split("/")[-1]
-            folder_out = f"{folder_results}/{folder_name}"
-            if os.path.exists(folder_out):
-                shutil.rmtree(folder_out)	
-            os.makedirs(folder_out)
-            print(folder_in)
-            filenames = [os.path.join(folder_in, name) for name in os.listdir(folder_in)]
-            for filename in tqdm(filenames):
-                name = os.path.basename(filename)
-                #print (filename)
-                im = Image.open(filename).convert("RGB")
-                im_np = np.array(im)
-                sample_preprocessed = torch.Tensor(transform(im).pixel_values[0]).to(self.device).unsqueeze(0)
-                score, score_map = self.predict(sample_preprocessed)  # Anomaly Detection
-
-                score = score.cpu().numpy()
-                score_map = score_map.cpu().numpy()[0,:,:]  # 1x224x224 # TODO if process batch  modify
-                
-                score_list.append(score)
-                score_map_list.extend(score_map.flatten())
-
-                out = get_results(im_np, score_map, threshold=scoremap_threshold)  
-                
-                # Chech score
-                y_pred = 0
-                res = "Good"
-                if score > score_threshold:
-                    y_pred = 1
-                    res = "Anomaly"
-
-                # check ideal
-                y_true = 1
-                if "good" in str(filename):
-                    y_true = 0
-                    
-                y_pred_list.append(y_pred)
-                y_true_list.append(y_true)
-                
-                err = False
-                if y_true==0 and y_pred==1:
-                    #  False Negative: Ho predetto nok= y_pred=1 ma in realtà era good y_true=0
-                    fn_list.append(str(filename))
-                    err = True
-                elif y_true==1 and y_pred==0:
-                    #  False Positive: Ho predetto good= y_pred=0 ma in realtà era nok y_true=1
-                    fp_list.append(str(filename))
-                    err = True
-                elif y_true==0 and y_pred==0:
-                    #  True Negative: Ho predetto good= y_pred=0 e in realtà è good y_true=0
-                    tn_list.append(str(filename))
-                else:
-                    #  True Positive: Ho predetto npk= y_pred=1 e in realtà è nok y_true=1
-                    tp_list.append(str(filename))
-                                    
-
-                folder = filename.split("/")[-2]
-                f = os.path.basename(filename)
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                cv2.putText(out, f'Score: {score:.3f} Result: {res}', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-                filepath_out = os.path.join(folder_out,f)
-                #print(filepath_out)
-                out = cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
-                cv2.imwrite(filepath_out, out)
-
-        y_true = np.array(y_true_list)
-        y_pred = np.array(y_pred_list)
-        TP = len(tp_list)
-        TN = len(tn_list)
-        FN = len(fn_list)
-        FP = len(fp_list)
-        recall = TP/(TP+FN) #recall_score(y_true, y_pred)
-        precision = TP/(TP+FP) #precision_score(y_true, y_pred)
-        f1score = 2 * (precision * recall) / (precision + recall) # f1_score(y_true, y_pred)
-        fp = '\n'.join(fp_list)
-        fn = '\n'.join(fn_list)
-        code_to_write=f"""
-
-        --------------------------------------------------------------------------------------------
-
-
-        --------------------------------------------------------------------------------------------
-        Precision:  TP/(TP+FP) = {precision*100:.2f} %
-        Percentuale che mi dice quanto l'algoritmo è bravo a individuare i casi anomali
-        FP: è un  numero che indica quanto volte l'algoritmo ha predetto good ma in realtà era nok
-
-        Recall TP/(TP+FN) = {recall*100:.2f} %
-        Percentuale che mi dice quanto l'algoritmo è bravo a individuare i casi non anomali
-        FN: è un  numero che indica quanto volte l'algoritmo ha predetto nok ma in realtà era good
-
-        F1 Score = 2* (Precision*Recall) / (Precision+Recall) = {f1score*100:.2f} %
-        Metrica che bilancia precision e recall
-        --------------------------------------------------------------------------------------------
-
-        --------------------------------------------------------------------------------------------
-                    Actual/Predicted    | Predicted Anomaly (1)  | Predicted Good (0)"
-                    Actual anomaly (1)  |        TP={TP}         |       FP={FP} 
-                    Actual good    (0)  |        FN={FN}         |       TN={TN}    
-        --------------------------------------------------------------------------------------------
-
-        --------------------------------------------------------------------------------------------
-        [INFO][evaluate][False Positive] Ho predetto good= y_pred=0 ma in realtà era nok y_true=1
-        {fp}
-        --------------------------------------------------------------------------------------------
-
-        --------------------------------------------------------------------------------------------
-        [INFO][evaluate][False Negative] Ho predetto nok= y_pred=1 ma in realtà era good y_true=0
-        {fn}
-        --------------------------------------------------------------------------------------------
-        """
-        filepath_results=f"{folder_results}/results.txt"
-        with open(filepath_results, 'w') as file:
-            file.write(code_to_write)
-
-
-        with open(filepath_results, 'r') as f:
-            # Read the contents of the file and print them line by line
-            for line in f:
-                print(line, end='')  # end='' avo
-
     # Override
     def __str__(self):
         return "ViT"      
