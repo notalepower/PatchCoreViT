@@ -63,7 +63,7 @@ def show(input_idx:int, input_path:str, model, distance_label = "Euclidean", sav
     memory_bank_idx = model.dist_score_idxs[input_idx]
     target_path_idx = memory_bank_idx // n_patch_img
     target_idx = memory_bank_idx % n_patch_img
-    target_path = model.memory_bank_paths[target_path_idx][0] # TODO: Perché restituisce una tupla
+    target_path = model.memory_bank_paths[target_path_idx][0]
 
     target_score = model.dist_score[input_idx]
 

@@ -39,18 +39,18 @@ class MVTecDataset(torch.utils.data.Dataset):
         self.resize = resize
 
         # Populate the target and filepath lists
-        for folder in folders_path:         # cycle the list of folders
-            for name in os.listdir(folder): # cycle the photos in the folder
+        for folder in folders_path:                                 # cycle the list of folders
+            for name in os.listdir(folder):                         # cycle the photos in the folder
                 filename = os.path.join(folder, name)
                 
                 self.filepaths.append(filename)
                 self.target.append(0 if "good" in filename else 1)
-        self.target = torch.tensor(self.target, dtype=torch.int32) # transform target into tensor
+        self.target = torch.tensor(self.target, dtype=torch.int32)  # transform target into tensor
 
         self.transform_mask = T.Compose([
-            T.Resize(self.resize, Image.NEAREST),   # resizes image if it is too big
-            T.CenterCrop(self.cropsize),            # apply center crop
-            T.ToTensor(),                           # converts it to a tensor
+            T.Resize(self.resize, Image.NEAREST),                   # resizes image if it is too big
+            T.CenterCrop(self.cropsize),                            # apply center crop
+            T.ToTensor(),                                           # converts it to a tensor
         ])
 
     def __getitem__(self, index: int) -> Tuple[tensor, int, str, tensor]: 
@@ -58,9 +58,9 @@ class MVTecDataset(torch.utils.data.Dataset):
         x = self.transform(Image.open(filepath).convert("RGB"))
         y = self.target[index]
 
-        if y == 0:  # creates a mask of zeros since there are no anomalies
+        if y == 0:                                                  # creates a mask of zeros since there are no anomalies
             mask = torch.zeros([1, self.cropsize, self.cropsize])
-        else:       # otherwise it retrieves it
+        else:                                                       # otherwise it retrieves it
             filepath_mask = filepath.replace("test", "ground_truth").replace(".","_mask.")
             mask = self.transform_mask(Image.open(filepath_mask)) if os.path.exists(filepath_mask) else torch.zeros([1, self.cropsize, self.cropsize])
 
@@ -113,10 +113,6 @@ def get_best_threshold(y_true: List[int], y_hat: List[float], initial_threshold:
 ################
 
 # PatchCore
-backbones = [
-    "timm/wide_resnet50_2.tv2_in1k",
-    "google/vit-base-patch16-224-in21k"
-]
 
 class PatchCore(torch.nn.Module, ABC): # Abstract class
     
@@ -198,7 +194,6 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         """
         pass
 
-    # Get coreset: TO_STUDY 
     def get_coreset(self, memory_bank: tensor, l: int = 1000, eps: float = 0.90) -> tensor:
 
         coreset_idx = []  # Returned coreset indexes
@@ -246,15 +241,14 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         for sample, _, file_path, _ in tqdm(train_dataloader, total=tot):
       
             patch, _ = self.extract_embeddings(sample)
-            self.memory_bank.append(patch.cpu())                # Fill memory bank
+            self.memory_bank.append(patch.cpu())                        # Fill memory bank
             self.memory_bank_paths.append(file_path)
             counter += 1
             if counter > tot:
                 break
 
-        self.memory_bank = torch.cat(self.memory_bank, 0) # VStack the patches        
+        self.memory_bank = torch.cat(self.memory_bank, 0)               # VStack the patches        
 
-        # TODO: Study Coreset subsampling
         if self.f_coreset < 1:
             self.memory_bank = self.memory_bank.detach()                # Removes from GPU
             coreset_idx = self.get_coreset(
@@ -273,10 +267,6 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
 
     # Cross Cosine similarity distance
     def sdist(self, a:tensor, b:tensor) -> tensor:
-        # a, b must be (1,1536) and (10, 1536)
-        # a = model.patch
-        # b = model.memory_bank.view(1960,-1)
-
         a_norm = a / a.norm(dim=1)[:, None]
         b_norm = b / b.norm(dim=1)[:, None]
         res = torch.mm(a_norm, b_norm.transpose(0,1))
@@ -291,16 +281,16 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         n_patches, hidden_size = patch.shape 
 
         # Compute maximum distance score s* (equation 6 from the paper)
-        distances = metric(patch, self.memory_bank)                     # L2 norm dist btw test patch with each patch of memory bank
-        dist_score, dist_score_idxs = torch.min(distances, dim=1)       # Val and index of the distance scores (minimum values of each row in distances)
-        s_idx = torch.argmax(dist_score)                                # Index of the anomaly candidate patch
-        s_star = torch.max(dist_score)                                  # Maximum distance score s*
-        m_test_star = torch.unsqueeze(patch[s_idx], dim=0)              # Anomaly candidate patch
-        m_star = self.memory_bank[dist_score_idxs[s_idx]].unsqueeze(0)  # Memory bank patch closest neighbour to m_test_star
+        distances = metric(patch, self.memory_bank)                                     # L2 norm dist btw test patch with each patch of memory bank
+        dist_score, dist_score_idxs = torch.min(distances, dim=1)                       # Val and index of the distance scores (minimum values of each row in distances)
+        s_idx = torch.argmax(dist_score)                                                # Index of the anomaly candidate patch
+        s_star = torch.max(dist_score)                                                  # Maximum distance score s*
+        m_test_star = torch.unsqueeze(patch[s_idx], dim=0)                              # Anomaly candidate patch
+        m_star = self.memory_bank[dist_score_idxs[s_idx]].unsqueeze(0)                  # Memory bank patch closest neighbour to m_test_star
 
         # KNN
-        knn_dists = torch.cdist(m_star, self.memory_bank, p=2.0)        # L2 norm dist btw m_star with each patch of memory bank
-        _, nn_idxs = knn_dists.topk(k=self.k_nearest, largest=False)    # Values and indexes of the k smallest elements of knn_dists
+        knn_dists = torch.cdist(m_star, self.memory_bank, p=2.0)                        # L2 norm dist btw m_star with each patch of memory bank
+        _, nn_idxs = knn_dists.topk(k=self.k_nearest, largest=False)                    # Values and indexes of the k smallest elements of knn_dists
 
         # Computes the weight w
         m_star_neighbourhood = self.memory_bank[nn_idxs[0, 1:]]         
@@ -314,16 +304,16 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
 
         # # Segmentation map
         height = width = int(math.sqrt(n_patches))
-        fmap_size = (height, width)                     # Feature map sizes: h, w
-        segm_map = dist_score.view(1, 1, *fmap_size)    # Reshape distance scores tensor
-        segm_map = torch.nn.functional.interpolate(     # Upscale by bi-linaer interpolation to match the original input resolution
+        fmap_size = (height, width)                                                     # Feature map sizes: h, w
+        segm_map = dist_score.view(1, 1, *fmap_size)                                    # Reshape distance scores tensor
+        segm_map = torch.nn.functional.interpolate(                                     # Upscale by bi-linaer interpolation to match the original input resolution
                         segm_map,
                         size=(self.image_size, self.image_size),
                         mode='bilinear'
                     )
-        segm_map = gaussian_blur(segm_map.cpu())         # Gaussian blur of kernel width = 4
+        segm_map = gaussian_blur(segm_map.cpu())                                        # Gaussian blur of kernel width = 4
         
-        # debugging purposes
+        # Debugging purposes
         self.s_idx = s_idx
         self.distances = distances
         self.dist_score = dist_score
@@ -468,13 +458,13 @@ class VanillaPatchCore(PatchCore): # CNN backbone with layer concatenation
     # Override
     def extract_embeddings(self, sample: tensor)-> Tuple[tensor, tensor]:
             sample_preprocessed = sample.pixel_values[0]
-            feature_maps = self(sample_preprocessed.to(self.device))      # Extract feature maps
-            fmap_size = feature_maps[0].shape[-2]         # fmap_size = 28
-            self.resize = torch.nn.AdaptiveAvgPool2d(fmap_size)  ## For stretching the spatial dimensions
+            feature_maps = self(sample_preprocessed.to(self.device))        # Extract feature maps
+            fmap_size = feature_maps[0].shape[-2]                           # fmap_size = 28
+            self.resize = torch.nn.AdaptiveAvgPool2d(fmap_size)             # For stretching the spatial dimensions
             
             resized_maps = [self.resize(self.avg(fmap)) for fmap in feature_maps]
-            patch = torch.cat(resized_maps, 1)            # Merge the resized feature maps
-            patch = patch.reshape(patch.shape[1], -1).T   # Craete a column tensor
+            patch = torch.cat(resized_maps, 1)                              # Merge the resized feature maps
+            patch = patch.reshape(patch.shape[1], -1).T                     # Create a column tensor
             return patch, feature_maps
     
     # Override
@@ -512,7 +502,7 @@ class PatchCoreViT(PatchCore): # ViT backbone with layer concatenation
         sample_preprocessed = sample.pixel_values[0]
         output = self(sample_preprocessed.to(self.device))
         output = [ torch.split(o, [1, o.shape[1] - 1], dim=1)[1] for o in output ]  # removes classification token in front of the maps
-        feature_maps = torch.cat(output, 2) # concatenates the feature's levels
+        feature_maps = torch.cat(output, 2)                                         # concatenates the feature's levels
         patch = feature_maps.squeeze()
         return patch, feature_maps
     
@@ -554,7 +544,6 @@ class PatchCoreSWin(PatchCore): # SWin backbone with layer concatenation
         sample_preprocessed = sample.pixel_values[0]
         output = self(sample_preprocessed.to(self.device))
         features_maps = torch.cat([ o[0] for o in output ], dim = 2)
-        # features_maps = torch.cat([features_maps], 2) # concatenates the feature's levels
         patch = features_maps.squeeze()
         return patch, features_maps
 

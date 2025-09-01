@@ -12,6 +12,13 @@ This project was part of my master's thesis. It focused on integrating ViTs into
 - PatchCoreSWin = PatchCore + SWin Backbone ( + Layer Concatenation) 
 
 # Patchcore
+PatchCore is an anomaly detection methos for images that leverages feature embeddings from pre-trained convolutional neural networks:
+1. Extracting patch-level features from images using a backbone network.
+2. Constructing a memory bank of representative features from normal (non-anomalous) images.
+3. Detecting anomalies by measuring the distance between features of a test image's patches and the nearest neighbors in the memory bank.
+4. Aggregating patch-level anomaly scores to prodice an image-level anomaly score.
+
+
 ## Visual representation of PatchCore's Algorithm
 
 ![PatchCore Algorithm](media/vit_patch_analysis.gif)
@@ -30,7 +37,8 @@ This project was part of my master's thesis. It focused on integrating ViTs into
 Cosine similarity is bounded between 0 and 1, producing a well-defined heatmap with clear constrast, making anomalous regions easier to identify.
 Euclidean distance, in contrast, is unbounded, resulting in a more spread-out range of values and a less distinct heatmap, where anomalies are visually less prominent.*
 
-# patchcore_utils.py
+# patchcore_models.py
+
 ## MvTecDataset Class
 This custom class was tailored to fit the directory topography of the [MvTec AD dataset](https://www.mvtec.com/company/research/datasets/mvtec-ad/downloads).
 
@@ -50,95 +58,99 @@ This custom class was tailored to fit the directory topography of the [MvTec AD 
 >       - / contamination / *_mask.png
 
 > ### Attributes:
-> - self.filepaths: List containing the absolute path of the images.
-> - self.target: List containing the ok and not ok (nok).
-> - self.transform: The Image transformation that needs to be applied. 
+> - `filepaths`: List containing the absolute path of the images.
+> - `target`: List containing the ok and not ok (nok).
+> - `transform`: The Image transformation that needs to be applied. 
 ---
 ## PatchCore Class
 >### Attributes:
-> - self.device
-> - self.backbone
-> - self.model
-> - self.processor
-> - self.layers
-> - self.seed
-> - self.memory_bank
-> - self.f_coreset
-> - self.eps_coreset
-> - self.k_nearest
-> - self.image_size
+> - `device`
+> - `backbone`
+> - `model`
+> - `processor`
+> - `layers`
+> - `seed`
+> - `memory_bank`
+> - `f_coreset`
+> - `eps_coreset`
+> - `k_nearest`
+> - `image_size`
 
 ### Methods:
-> #### __init__ (self, f_coreset, eps_coreset, k_nearest, vanilla, backbone, image_size):
->- Parameter initialization, it also prepares te GPU
+> #### __init__ (f_coreset, eps_coreset, k_nearest, vanilla, backbone, image_size):
+>- Parameter initialization, it also prepares the GPU.
 >- hook saves the output in *self.features*.
->- register_forward_hook(hook): used to associate a layer with a hook function
+>- *register_forward_hook*: used to associate a layer with a hook function
 
->#### forward (self, sample: tensor):
->- Passes the input through the backbone (self.model).
->- Returns self.features, which is the output from the layers to which the hook was attached.
+>#### forward (sample: tensor):
+>- Passes the input through the backbone (*self.model*).
+>- Returns *self.features*, which is the output from the layers to which the hook was attached.
 
->#### extract_embeddings (self, sample):
->- It uses *forward* method to obtain the feature maps
->- Feature maps will be processed and transformed based on the type of backbone (self.model)
+>#### extract_embeddings (sample):
+>- It uses *forward* method to obtain the feature maps.
+>- Feature maps will be processed and transformed based on the type of backbone (*self.model*)
 >- Returns a patch.
->- Returns feature_maps (for debugging purposes).
+>- Returns `feature_maps` (for debugging purposes).
 
->#### predict (self, sample, metric):
->- Returns the anomaly score and the anomaly map. 
+>#### predict (sample, metric):
+>- Returns the `anomaly score` and the `anomaly map`. 
 >- Uses the method *extract_emdeddings*
 
->#### fit (self, train_paths,  scale: int=1):
->- Populates the memory bank (*self.memory_bank*)
+>#### fit (train_paths,  scale: int=1):
+>- Populates the `memory bank` (*self.memory_bank*)
 >- Network training, inside it *extract_embeddings* is called.
 >- Coreset subsampling prunes the memory bank by keeping the most significant patches.
 
->#### evaluate (self, test_val_paths, metric, validation_flag = True):
+>#### evaluate (test_val_paths, metric, validation_flag = True):
 >- Computes the ROCAUC at image and pixel levels.
->- Computes the precision, recall and F1 score.
+>- Computes the `precision`, `recall` and `F1 score`.
 >- The threshold for the F1 score was determined via *dynamic thresholding*. This approach involves testing different threshold values and selecting the one that produces the highest F1-score on the validation set.
 
 ---
 # patchcore_utils.py
-TODO: brief description on what it does
+The module contains utility functions for:
+1. Image and patch visual analysis.
+2. Model evaluation on the entire MVTec dataset. 
 
 >### Attributes:
-> - mvtec_classes
-> - img_size
-> - red_color
-> - thickness
-> - n_patch_img
-> - n_patch_side
-> - w_patch
-> - h_patch
+> - `mvtec_classes` = [ "bottle", "cable", ..., "zipper" ]
+> - `img_size`
+> - `red_color`
+> - `thickness`
+> - `n_patch_img`
+> - `n_patch_side`
+> - `w_patch`
+> - `h_patch`
 
 ### Methods:
-> #### plot_gridded_image(img_path):
->- Example item
+> #### plot_gridded_image (img_path):
+>- TODO: Example item
 
-> #### get_box_coordinates(idx):
->- Example item
+> #### get_box_coordinates (idx):
+>- TODO: Example item
 
-> #### get_plot_images(idx, path):
->- Example item
+> #### get_plot_images (idx, path):
+>- TODO: Example item
 
-> #### show(input_idx, input_path, model, distance_label, save, alpha):
->- Example item
+> #### show (input_idx, input_path, model, distance_label, save, alpha):
+>- Plots the closest associated patch in the `memory bank` for a GIVEN patch index.
 
-> #### create_gif(input_path, model, metric, duration, output_path):
->- Example item
+> #### create_gif (input_path, model, metric, duration, output_path):
+>- Creates a gif that shows, FOR EACH patch index of the input image, the closest associated patch in the `memory bank`.
 
-> #### get_result(model_constructor, model_params, class_name, base_path):
->- Example item
+> #### get_result (model_constructor, model_params, class_name, base_path):
+>- Returns a dictionary containing the result for ONE SPECIFIC class of the MVTec Dataset.
+>- The `result` dictionary includes the ROCAUC score at both pixel and image level, as well as `precision`, `recall` and `F1 score`.
 
-> #### get_results(model_constructor, model_params):
->- Example item
+> #### get_results (model_constructor, model_params):
+>- Returns a dictionary containing the results for ALL classes of the MTec dataset.
+>- It also computes the average ROCAUC score at both pixel and image level.
 
-> #### print_results(results):
->- Example item
+> #### print_results (results):
+>- Prints the `results` dictionary into an easily readable format.
 
-> #### save_json(results, json_name):
->- Example item
+> #### save_json (results, json_name):
+>- Converts the dictionary `results` into a JSON file that can be stored.
 
 
 # TODO:
