@@ -2,8 +2,7 @@
 [A Vision Transformer Approach To Anomaly Detection](https://amslaurea.unibo.it/id/eprint/31435/)
 > ** N.B.: This repository is still under development **
 
-This project was part of my master's thesis. It focused on integrating ViTs into PatchCore as an alternative to traditional CNNs.
-
+This project was part of my master's thesis. It focused on integrating ViTs into [PatchCore](https://arxiv.org/abs/2106.08265) as an alternative to traditional CNNs.
 
 ### Models:
 - PatchCore = Abstract Class
@@ -23,7 +22,7 @@ PatchCore is an anomaly detection methos for images that leverages feature embed
 
 ![PatchCore Algorithm](media/vit_patch_analysis.gif)
 
-*The f_coreset parameter was set to 1 to prevent discarding any patches from the memory bank, esuring that the original image associated with the target patch could still be retrieved.*
+*The f_coreset parameter was set to 1 to prevent discarding any patches from the memory bank, ensuring that the original image associated with the target patch could still be retrieved.*
 
 *With a ViT backbone, an interesting property can be observed: the target patch often matches patches from the same spatial region in other images, thanks to the positional encodings.*
 
@@ -80,24 +79,24 @@ This custom class was tailored to fit the directory topography of the [MvTec AD 
 > #### __init__ (f_coreset, eps_coreset, k_nearest, vanilla, backbone, image_size):
 >- Parameter initialization, it also prepares the GPU.
 >- hook saves the output in *self.features*.
->- *register_forward_hook*: used to associate a layer with a hook function
+>- Uses *register_forward_hook* method to associate a layer with a hook function.
 
 >#### forward (sample: tensor):
->- Passes the input through the backbone (*self.model*).
 >- Returns *self.features*, which is the output from the layers to which the hook was attached.
+>- Passes the input through the backbone (*self.model*).
 
 >#### extract_embeddings (sample):
->- It uses *forward* method to obtain the feature maps.
->- Feature maps will be processed and transformed based on the type of backbone (*self.model*)
->- Returns a patch.
+>- Returns a `patch`.
 >- Returns `feature_maps` (for debugging purposes).
+>- Uses *forward* method to obtain the feature maps.
+>- Feature maps will be processed and transformed based on the type of backbone (*self.model*).
 
 >#### predict (sample, metric):
 >- Returns the `anomaly score` and the `anomaly map`. 
->- Uses the method *extract_emdeddings*
+>- Uses *extract_emdeddings* method.
 
 >#### fit (train_paths,  scale: int=1):
->- Populates the `memory bank` (*self.memory_bank*)
+>- Populates the `memory bank` (*self.memory_bank*).
 >- Network training, inside it *extract_embeddings* is called.
 >- Coreset subsampling prunes the memory bank by keeping the most significant patches.
 
@@ -114,36 +113,39 @@ The module contains utility functions for:
 
 >### Attributes:
 > - `mvtec_classes` = [ "bottle", "cable", ..., "zipper" ]
-> - `img_size`
-> - `red_color`
-> - `thickness`
-> - `n_patch_img`
-> - `n_patch_side`
-> - `w_patch`
-> - `h_patch`
+> - `img_size` = (224, 224)
+> - `red_color` = (0, 0, 255)
+> - `thickness` = 1
+> - `n_patch_img` = 196
+> - `n_patch_side` = 14
+> - `w_patch` = 16px
+> - `h_patch` = 16x
 
-### Methods:
-> #### plot_gridded_image (img_path):
->- TODO: Example item
+### Visual Analysis Methods:
 
 > #### get_box_coordinates (idx):
->- TODO: Example item
+>- Returns the top left and bottom right image coordinates of the patch given its index.
 
 > #### get_plot_images (idx, path):
->- TODO: Example item
+>- Returns the image with the specified patch highlighted, along with the cropped version of that patch.
+>- Uses the *get_box_coordinates* method to draw the highlighed patch.
 
 > #### show (input_idx, input_path, model, distance_label, save, alpha):
 >- Plots the closest associated patch in the `memory bank` for a GIVEN patch index.
+>- Uses the *get_plot_images* method to create the images inside the plot.
 
 > #### create_gif (input_path, model, metric, duration, output_path):
 >- Creates a gif that shows, FOR EACH patch index of the input image, the closest associated patch in the `memory bank`.
 
+### Evaluation Methods:
+
 > #### get_result (model_constructor, model_params, class_name, base_path):
->- Returns a dictionary containing the result for ONE SPECIFIC class of the MVTec Dataset.
+>- Returns a dictionary (`result`) containing the result for ONE SPECIFIC class of the MVTec Dataset.
 >- The `result` dictionary includes the ROCAUC score at both pixel and image level, as well as `precision`, `recall` and `F1 score`.
 
 > #### get_results (model_constructor, model_params):
->- Returns a dictionary containing the results for ALL classes of the MTec dataset.
+>- Returns a dictionary (`results`) containing the results for ALL classes of the MTec dataset.
+>- Uses the *get_result* method to retrieve the `result` of a single class of the MVTec Dataset.
 >- It also computes the average ROCAUC score at both pixel and image level.
 
 > #### print_results (results):
@@ -151,8 +153,3 @@ The module contains utility functions for:
 
 > #### save_json (results, json_name):
 >- Converts the dictionary `results` into a JSON file that can be stored.
-
-
-# TODO:
-- [ ] For each input parameter add the types
-- [ ] Add English comments in the code

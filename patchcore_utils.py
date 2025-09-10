@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from tqdm import tqdm
 
-# mvtec_classes = [ "bottle", "cable", "capsule", "carpet", "grid", "hazelnut", "leather", "metal_nut", "pill", "screw", "tile", "toothbrush", "transistor", "wood", "zipper" ]
-mvtec_classes = [ "bottle", "cable"]
+mvtec_classes = [ "bottle", "cable", "capsule", "carpet", "grid", "hazelnut", "leather", "metal_nut", "pill", "screw", "tile", "toothbrush", "transistor", "wood", "zipper" ]
+# mvtec_classes = [ "bottle", "cable"]
 img_size = (224, 224)
 red_color = (0, 0, 255)
 thickness = 1
@@ -141,7 +141,8 @@ def create_gif(input_path: str, model, metric, duration:int=100, output_path:str
 def get_result(
     model_constructor, 
     model_params: dict, 
-    class_name: str, 
+    class_name: str,
+    metric: str = "euclidean", 
     base_path: str = "/content/"):
 
   # Paths preparation
@@ -152,7 +153,8 @@ def get_result(
   # Train & Evaluate
   model = model_constructor(**model_params)
   model.fit(train_paths)
-  model.evaluate(test_paths, validation_flag = True)
+  metric_distance = model.cdist if metric == "euclidean" else model.sdist
+  model.evaluate(test_paths, metric_distance, validation_flag = True)
 
   # Save model results
   result = {}
@@ -166,7 +168,8 @@ def get_result(
 # Evaluate the model on ALL the MVTec classes
 def get_results(
     model_constructor, 
-    model_params: dict 
+    model_params: dict,
+    metric: str = "euclidean" 
     ):
 
   results = {}
@@ -175,7 +178,7 @@ def get_results(
   for class_name in mvtec_classes:
     print()
     print(f'Class: {class_name}')
-    result = get_result(model_constructor, model_params, class_name)
+    result = get_result(model_constructor, model_params, class_name, metric)
     results[class_name] = result
 
     # Average computation
@@ -191,6 +194,7 @@ def get_results(
 
   results["misclassified"] = misclassified
   results["model_params"] = model_params
+  results['metric'] = metric
   
   return results
 
@@ -240,18 +244,3 @@ def save_json(
     json.dump(results_json, f, indent=4)
 
   return results_json
-
-'''
-def get_layer_results(model_constructor, model_params):
-  layer_results = {}
-  for layer in model_params["layers"]:
-    print()
-    print(f"Layer: {layer}")
-
-    results = get_results(model_constructor, model_params)
-    print_results(results)
-
-    layer_results[layer] = results
-
-  return layer_results
-'''

@@ -26,14 +26,14 @@ from transformers import AutoModel, AutoImageProcessor, BaseImageProcessor
 
 ### UTILITY ###
 
-# MVTecDataset DONE
+# MVTecDataset
 class MVTecDataset(torch.utils.data.Dataset):  
 
     def __init__(self, folders_path: List[str], processor: BaseImageProcessor, resize: int = 256, cropsize : int = 224):
 
         # List subfolders
         self.filepaths = []
-        self.target = [] # 0 Good, 1 Nok
+        self.target = []                                            # 0 Good, 1 Nok
         self.transform = processor
         self.cropsize = cropsize
         self.resize = resize
@@ -69,7 +69,7 @@ class MVTecDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.filepaths)
 
-# Guassian Blur DONE
+# Guassian Blur
 def gaussian_blur(img: tensor, radius: int = 4) -> tensor:
     """
         Apply a gaussian smoothing with sigma = 4 over the input image.
@@ -85,12 +85,13 @@ def gaussian_blur(img: tensor, radius: int = 4) -> tensor:
 
     return blurred_map
 
-# Get best threshold DONE
+# Get best threshold
 def get_y_f1score(y_true: List[int], y_hat: List[float], threshold: float) -> Tuple[List[float], float]:
     y_pred_hat = [(1 if score > threshold else 0) for score in y_hat]
     f1score = f1_score(y_true, y_pred_hat)
     return y_pred_hat, f1score
 
+# Dynamic thresholding
 def get_best_threshold(y_true: List[int], y_hat: List[float], initial_threshold: float, search: int) -> Tuple[List[int], float, float, float]: 
     increment = 0.01
     thresholds = np.arange(initial_threshold-search, initial_threshold+search + increment, increment)
@@ -210,7 +211,7 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         # Coreset subsampling
         print(f'Start Coreset Subsampling...')
 
-        last_item = memory_bank[idx: idx + 1]   # First patch selected = patch on top of memory bank
+        last_item = memory_bank[idx: idx + 1]                                               # First patch selected = patch on top of memory bank
         coreset_idx.append(torch.tensor(idx))
         min_distances = torch.linalg.norm(memory_bank - last_item, dim=1, keepdims=True)    # Norm l2 of distances (tensor)
 
@@ -225,9 +226,9 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
             min_distances = torch.minimum(distances, min_distances)                         # Verical tensor of minimum norms
             idx = torch.argmax(min_distances)                                               # Index of maximum related to the minimum of norms
 
-            last_item = memory_bank[idx: idx + 1]   # last_item = maximum patch just found
-            min_distances[idx] = 0                  # Zeroing last_item distances
-            coreset_idx.append(idx.to("cpu"))       # Save idx inside the coreset
+            last_item = memory_bank[idx: idx + 1]                                           # last_item = maximum patch just found
+            min_distances[idx] = 0                                                          # Zeroing last_item distances
+            coreset_idx.append(idx.to("cpu"))                                               # Save idx inside the coreset
 
         return torch.stack(coreset_idx)
 
@@ -302,7 +303,7 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
         # Compute image-level anomaly score s
         s = w * s_star
 
-        # # Segmentation map
+        # Segmentation map
         height = width = int(math.sqrt(n_patches))
         fmap_size = (height, width)                                                     # Feature map sizes: h, w
         segm_map = dist_score.view(1, 1, *fmap_size)                                    # Reshape distance scores tensor
@@ -313,7 +314,7 @@ class PatchCore(torch.nn.Module, ABC): # Abstract class
                     )
         segm_map = gaussian_blur(segm_map.cpu())                                        # Gaussian blur of kernel width = 4
         
-        # Debugging purposes
+        # For debugging purposes
         self.s_idx = s_idx
         self.distances = distances
         self.dist_score = dist_score
@@ -459,7 +460,7 @@ class VanillaPatchCore(PatchCore): # CNN backbone with layer concatenation
     def extract_embeddings(self, sample: tensor)-> Tuple[tensor, tensor]:
             sample_preprocessed = sample.pixel_values[0]
             feature_maps = self(sample_preprocessed.to(self.device))        # Extract feature maps
-            fmap_size = feature_maps[0].shape[-2]                           # fmap_size = 28
+            fmap_size = feature_maps[0].shape[-2]                           
             self.resize = torch.nn.AdaptiveAvgPool2d(fmap_size)             # For stretching the spatial dimensions
             
             resized_maps = [self.resize(self.avg(fmap)) for fmap in feature_maps]
