@@ -1,21 +1,25 @@
 # PatchCore Transformed 
-[A Vision Transformer Approach To Anomaly Detection](https://amslaurea.unibo.it/id/eprint/31435/)
+A Vision Transformer Approach To Anomaly Detection
 > ** N.B.: This repository is still under development **
 
 This project was part of my master's thesis. It focused on integrating ViTs into [PatchCore](https://arxiv.org/abs/2106.08265) as an alternative to traditional CNNs.
 
+Links:
+- [AMSLaurea](https://amslaurea.unibo.it/id/eprint/31435/)
+- [Google Slides](https://docs.google.com/presentation/d/1XdaHwEB4m-Prw0nhlkRQE02wMLcL9ElA5G5dZLgl_N4/edit?usp=sharing)
+
 ### Models:
 - PatchCore = Abstract Class
 - VanillaPatchCore = PatchCore + CNN Backbone
-- PatchCoreViT = PatchCore + ViT Backbone ( + Layer Concatenation) 
-- PatchCoreSWin = PatchCore + SWin Backbone ( + Layer Concatenation) 
+- PatchCoreViT = PatchCore + ViT Backbone ( + Layer Concatenation ) 
+- PatchCoreSWin = PatchCore + SWin Backbone ( + Layer Concatenation ) 
 
 # Patchcore
-PatchCore is an anomaly detection methos for images that leverages feature embeddings from pre-trained convolutional neural networks:
+PatchCore is an anomaly detection method for images that leverages feature embeddings from pre-trained convolutional neural networks:
 1. Extracting patch-level features from images using a backbone network.
 2. Constructing a memory bank of representative features from normal (non-anomalous) images.
 3. Detecting anomalies by measuring the distance between features of a test image's patches and the nearest neighbors in the memory bank.
-4. Aggregating patch-level anomaly scores to prodice an image-level anomaly score.
+4. Aggregating patch-level anomaly scores to predict an image-level anomaly score.
 
 
 ## Visual representation of PatchCore's Algorithm
@@ -144,7 +148,7 @@ The module contains utility functions for:
 >- The `result` dictionary includes the ROCAUC score at both pixel and image level, as well as `precision`, `recall` and `F1 score`.
 
 > #### get_results (model_constructor, model_params):
->- Returns a dictionary (`results`) containing the results for ALL classes of the MTec dataset.
+>- Returns a dictionary (`results`) containing the results for ALL classes of the MTec Dataset.
 >- Uses the *get_result* method to retrieve the `result` of a single class of the MVTec Dataset.
 >- It also computes the average ROCAUC score at both pixel and image level.
 
